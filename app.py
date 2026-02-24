@@ -59,6 +59,7 @@ DB_PATH = "database.csv"
 csv_lock = threading.Lock() # Evita errores si 2 alumnos hacen trampa al mismo tiempo
 
 # Esto permite que el HTML encuentre el archivo /static/js/motor_ia.js
+app.mount("/static", StaticFiles(directory="."), name="static")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ==========================================
@@ -154,6 +155,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     # Importante: host 0.0.0.0 para que sea accesible externamente
     uvicorn.run("app:app", host="0.0.0.0", port=port)
+
 
 
 
