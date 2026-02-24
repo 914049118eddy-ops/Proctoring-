@@ -51,13 +51,22 @@
 
     <div class="sidebar">
         <div class="logo-uni">🏛️ UNI Proctoring</div>
+       
         <div class="student-info">
-            <h3 style="margin-top:0;">Datos del Estudiante</h3>
-            <p><strong>Nombre:</strong> Richard González</p>
-            <p><strong>Matrícula:</strong> A123456</p>
-            <p><strong>Carrera:</strong> Ing. de Sistemas</p>
-            <p><strong>Examen:</strong> POO</p>
+        <h3 style="margin-top:0;">Datos del Estudiante</h3>
+        <p><strong>Nombre:</strong> {{ nombre }}</p>
+        <p><strong>Matrícula:</strong> {{ uid }}</p>
+        <p><strong>Materia:</strong> {{ materia }}</p>
         </div>
+        
+        <script>
+            // Ahora el JS usa los datos que Python inyectó en el HTML
+            const DATOS_ALUMNO = { 
+                uid: "{{ uid }}", 
+                nombre: "{{ nombre }}", 
+                materia: "{{ materia }}" 
+            };
+        </script>
         <div style="flex:1;"></div>
         <p style="font-size: 12px; color: #9ca3af; text-align: center;">Motor de Inferencia Edge V2.0</p>
     </div>
