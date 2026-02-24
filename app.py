@@ -81,18 +81,25 @@ async def panel_examen(request: Request):
 
 # ... (Tus imports y configuración anterior)
 
+# Definir una clave simple para el docente
+CLAVE_DOCENTE = "uni2026"
+
 @app.get("/dashboard", response_class=HTMLResponse)
-async def ver_dashboard(request: Request):
-    """Ruta para que el profesor vea los resultados."""
+async def ver_dashboard(request: Request, password: str = None):
+    """
+    Ruta protegida. Solo entra si la URL es: /dashboard?password=uni2026
+    """
+    if password != CLAVE_DOCENTE:
+        return HTMLResponse(content="<h1>🚫 Acceso Denegado: Clave incorrecta</h1>", status_code=403)
+
     incidencias = []
     if os.path.exists(DB_PATH):
-        # Leemos el CSV con Pandas y lo convertimos a lista para el HTML
         df = pd.read_csv(DB_PATH)
         incidencias = df.to_dict(orient="records")
     
     return templates.TemplateResponse("dashboard.html", {
         "request": request, 
-        "incidencias": incidencias[::-1] # Invertimos para ver lo más reciente arriba
+        "incidencias": incidencias[::-1]
     })
 
 # Montamos la carpeta de evidencias para que las imágenes sean visibles en el navegador
@@ -110,4 +117,5 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     # Importante: host 0.0.0.0 para que sea accesible externamente
     uvicorn.run("app:app", host="0.0.0.0", port=port)
+
 
