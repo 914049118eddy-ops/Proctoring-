@@ -32,7 +32,16 @@
         <h1>👨‍🏫 Panel de Control Docente</h1>
         <a href="/dashboard" class="btn-refresh">Actualizar Datos</a>
     </div>
+    <div style="display: flex; gap: 15px;">
+    <a href="/descargar_reporte?password=uni2026" class="btn-refresh" style="background: #10b981;">📥 Descargar Reporte CSV</a>
+    <a href="/dashboard?password=uni2026" class="btn-refresh">🔄 Actualizar</a>
+</div>
 
+<div class="info">
+    <p><strong>Falta:</strong> {{ item.Falta_Detectada }}</p>
+    <p><strong>Riesgo Estimado:</strong> +0.5 pts</p>
+    <p><strong>Evidencia:</strong> <a href="/ver_evidencia/{{ item.Ruta_Evidencia.split('/')[-1] }}" target="_blank">Ver foto completa</a></p>
+</div>
     <div class="grid-evidencias">
         {% for item in incidencias %}
         <div class="card">
