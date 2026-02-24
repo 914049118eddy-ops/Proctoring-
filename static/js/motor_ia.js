@@ -1,11 +1,16 @@
-// ==========================================
-// CONFIGURACIÓN DE IA DISTRIBUIDA
-// ==========================================
 const video = document.getElementById('video-alumno');
 const canvas = document.getElementById('canvas-oculto');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+// --- VARIABLES DE PERSISTENCIA (ANTI-FALSAS ALARMAS) ---
 let enviandoAlerta = false;
 let yoloSession = null;
+
+let contadorCelular = 0;
+const FRAMES_REQUERIDOS_CELULAR = 2; // ~0.6s (ya que YOLO corre cada 10 frames)
+
+let contadorMirada = 0;
+const FRAMES_REQUERIDOS_MIRADA = 15; // ~0.5s (MediaPipe corre a ~30fps)
 
 function agregarEventoVisual(texto) {
     const lista = document.getElementById('lista-eventos');
@@ -20,7 +25,7 @@ function agregarEventoVisual(texto) {
     
     setTimeout(() => {
         badge.className = 'status-badge status-ok';
-        badge.innerHTML = '🟢 Monitoreo Activo';
+        badge.innerHTML = '🟢 Monitoreo Estable';
     }, 3000);
 }
 
@@ -30,28 +35,21 @@ async function enviarAlertaServidor(tipo) {
     
     agregarEventoVisual(tipo);
     
-    // Captura de evidencia
     ctx.drawImage(video, 0, 0, 640, 480);
-    const imgBase64 = canvas.toDataURL('image/jpeg', 0.6);
+    const imgBase64 = canvas.toDataURL('image/jpeg', 0.5);
 
     try {
         await fetch('/api/alerta', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                uid: DATOS_ALUMNO.uid,
-                nombre: DATOS_ALUMNO.nombre,
-                materia: DATOS_ALUMNO.materia,
-                tipo_falta: tipo,
-                imagen_b64: imgBase64
-            })
+            body: JSON.stringify({...DATOS_ALUMNO, tipo_falta: tipo, imagen_b64: imgBase64})
         });
     } catch (e) { console.error("Error de red:", e); }
     
     setTimeout(() => { enviandoAlerta = false; }, 5000);
 }
 
-// Configuración MediaPipe (FaceMesh)
+// --- MEDIAPIPE CON PERSISTENCIA ---
 const faceMesh = new FaceMesh({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
 });
@@ -60,13 +58,21 @@ faceMesh.setOptions({maxNumFaces: 1, refineLandmarks: true, minDetectionConfiden
 faceMesh.onResults((results) => {
     if (results.multiFaceLandmarks?.length > 0) {
         const landmarks = results.multiFaceLandmarks[0];
-        // Cálculo de desviación de iris
         const dX = Math.abs(landmarks[468].x - landmarks[33].x);
-        if (dX < 0.012) enviarAlertaServidor("Mirada Desviada");
+        
+        if (dX < 0.012) {
+            contadorMirada++;
+            if (contadorMirada > FRAMES_REQUERIDOS_MIRADA) {
+                enviarAlertaServidor("Mirada Desviada Prolongada");
+                contadorMirada = 0;
+            }
+        } else {
+            contadorMirada = 0; // Reset si vuelve a mirar al centro
+        }
     }
 });
 
-// Configuración YOLOv8 (ONNX Runtime)
+// --- YOLOv8 CON PERSISTENCIA ---
 async function initYOLO() {
     try {
         yoloSession = await ort.InferenceSession.create('/static/yolov8n.onnx', {executionProviders: ['wasm']});
@@ -91,21 +97,33 @@ async function inferenciaYOLO() {
     const output = await yoloSession.run({images: tensor});
     const data = output.output0.data;
     
+    let celularEncontrado = false;
     for (let i = 0; i < 8400; i++) {
-        if (data[8400 * 71 + i] > 0.55) { // Clase 67 (Cell Phone) + 4 coords
-            enviarAlertaServidor("Celular Detectado");
+        if (data[8400 * 71 + i] > 0.45) { // Bajamos un poco el umbral pero pedimos persistencia
+            celularEncontrado = true;
             break;
         }
     }
+
+    if (celularEncontrado) {
+        contadorCelular++;
+        if (contadorCelular >= FRAMES_REQUERIDOS_CELULAR) {
+            enviarAlertaServidor("Uso de Celular Confirmado");
+            contadorCelular = 0;
+        }
+    } else {
+        contadorCelular = 0; // Si desaparece el celular un solo frame, reiniciamos cuenta
+    }
 }
 
-// Bucle de Cámara
 const camera = new Camera(video, {
     onFrame: async () => {
         await faceMesh.send({image: video});
-        if (Math.random() > 0.8) await inferenciaYOLO();
+        frameCounter++;
+        if (frameCounter % 10 === 0) await inferenciaYOLO();
     },
     width: 640, height: 480
 });
+let frameCounter = 0;
 
 initYOLO().then(() => camera.start());
