@@ -79,6 +79,25 @@ async def panel_examen(request: Request):
     """Entrega la página web al alumno (el motor de IA va incluido ahí)."""
     return templates.TemplateResponse("cliente.html", {"request": request})
 
+# ... (Tus imports y configuración anterior)
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def ver_dashboard(request: Request):
+    """Ruta para que el profesor vea los resultados."""
+    incidencias = []
+    if os.path.exists(DB_PATH):
+        # Leemos el CSV con Pandas y lo convertimos a lista para el HTML
+        df = pd.read_csv(DB_PATH)
+        incidencias = df.to_dict(orient="records")
+    
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request, 
+        "incidencias": incidencias[::-1] # Invertimos para ver lo más reciente arriba
+    })
+
+# Montamos la carpeta de evidencias para que las imágenes sean visibles en el navegador
+app.mount("/ver_evidencia", StaticFiles(directory="evidencias"), name="evidencias")
+
 @app.post("/api/alerta")
 async def recibir_alerta(alerta: AlertaProctoring, background_tasks: BackgroundTasks):
     """Recibe la alerta del navegador y la procesa sin bloquear el servidor."""
@@ -91,3 +110,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     # Importante: host 0.0.0.0 para que sea accesible externamente
     uvicorn.run("app:app", host="0.0.0.0", port=port)
+
