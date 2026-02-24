@@ -16,6 +16,43 @@ import uvicorn
 app = FastAPI(title="Proctoring UNI - Edge Architecture")
 templates = Jinja2Templates(directory="templates")
 
+from fastapi import FastAPI, BackgroundTasks, Request, HTTPException, Form
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+# ... (tus otros imports)
+
+@app.get("/", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """Página inicial de registro para el alumno."""
+    return templates.TemplateResponse("registro.html", {"request": request})
+
+@app.post("/ingresar")
+async def ingresar_examen(uid: str = Form(...), nombre: str = Form(...), materia: str = Form(...)):
+    """Recibe los datos y redirige al examen con los datos en la URL."""
+    # Redirigimos al examen pasando los datos como parámetros
+    return RedirectResponse(url=f"/examen?uid={uid}&nombre={nombre}&materia={materia}", status_code=303)
+
+@app.get("/examen", response_class=HTMLResponse)
+async def examen_page(request: Request, uid: str, nombre: str, materia: str):
+    """Página del examen que recibe los datos del alumno."""
+    return templates.TemplateResponse("cliente.html", {
+        "request": request,
+        "uid": uid,
+        "nombre": nombre,
+        "materia": materia
+    })
+
+@app.get("/descargar_reporte")
+async def descargar_reporte(password: str = None):
+    """Genera y descarga el CSV limpio para el profesor."""
+    if password != CLAVE_DOCENTE:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    
+    # Aquí puedes llamar a tu lógica original de generar_reporte_limpio
+    # Por ahora, simplemente enviamos el archivo generado
+    if os.path.exists(DB_PATH):
+        return FileResponse(path=DB_PATH, filename="Reporte_Proctoring_FIEE.csv", media_type='text/csv')
+    raise HTTPException(status_code=404, detail="No hay datos registrados")
+
 # Crear directorios y base de datos si no existen
 os.makedirs("evidencias", exist_ok=True)
 DB_PATH = "database.csv"
@@ -117,6 +154,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     # Importante: host 0.0.0.0 para que sea accesible externamente
     uvicorn.run("app:app", host="0.0.0.0", port=port)
+
 
 
 
