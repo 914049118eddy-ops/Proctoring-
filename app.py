@@ -21,8 +21,8 @@ os.makedirs("evidencias", exist_ok=True)
 DB_PATH = "database.csv"
 csv_lock = threading.Lock() # Evita errores si 2 alumnos hacen trampa al mismo tiempo
 
-# Montamos la carpeta raíz para servir el modelo yolov8n.onnx estáticamente
-app.mount("/static", StaticFiles(directory="."), name="static")
+# Esto permite que el HTML encuentre el archivo /static/js/motor_ia.js
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ==========================================
 # MODELO DE DATOS
@@ -117,5 +117,6 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     # Importante: host 0.0.0.0 para que sea accesible externamente
     uvicorn.run("app:app", host="0.0.0.0", port=port)
+
 
 
