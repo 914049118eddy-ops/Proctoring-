@@ -10,6 +10,19 @@
         
         .main-grid { display: grid; grid-template-columns: 1fr 3fr; gap: 30px; }
         
+        <div class="aside-list" style="margin-bottom:20px;">
+            <h3>🛠️ Crear Nueva Sala</h3>
+            <form action="/crear_sala" method="post">
+                <input type="hidden" name="password" value="uni2026">
+                <input type="text" name="nombre_sala" placeholder="Nombre de Sala" required style="width:80%">
+                <button type="submit" style="background:var(--uni-red); color:white; border:none; padding:5px; cursor:pointer">Crear</button>
+            </form>
+        </div>
+        
+        <div class="asistencia-item">
+            <span class="status-dot" style="background: {{ 'red' if est.Camara == 'BLOQUEADA' else ('gray' if est.Estado == 'FINALIZADO' else '#10b981') }}"></span>
+            <strong>{{ est.Nombre }}</strong> - <small>{{ est.Estado }}</small>
+        </div>
         /* Estilo Lista Asistencia */
         .aside-list { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         .asistencia-item { padding: 10px; border-bottom: 1px solid #eee; font-size: 13px; }
