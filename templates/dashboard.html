@@ -2,61 +2,37 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Panel Docente - UNI Proctoring</title>
+    <title>Panel Docente - UNI</title>
     <style>
-        :root { --primary: #7b1fa2; --bg: #f3f4f6; --danger: #ef4444; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 40px; }
-        h1 { color: var(--primary); border-bottom: 2px solid var(--primary); padding-bottom: 10px; }
-        .grid-evidencias { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin-top: 30px; }
-        .card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: 0.3s; }
-        .card:hover { transform: translateY(-5px); }
-        .card img { width: 100%; height: 200px; object-fit: cover; background: #eee; }
-        .card-body { padding: 15px; }
-        .badge { background: var(--danger); color: white; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: bold; }
-        .info { font-size: 14px; color: #555; margin-top: 10px; }
-        .btn-refresh { background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; text-decoration: none; }
+        body { font-family: sans-serif; background: #f3f4f6; padding: 40px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+        .card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        img { width: 100%; height: 180px; object-fit: cover; }
+        .content { padding: 15px; }
+        .btn { background: #7b1fa2; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; }
     </style>
 </head>
 <body>
-    <nav style="background: white; padding: 15px 40px; display: flex; gap: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); width: 100%; position: fixed; top: 0; z-index: 1000;">
-        <a href="/" style="text-decoration: none; color: #7b1fa2; font-weight: bold;">📝 Examen Activo</a>
-        <a href="/dashboard?password=uni2026" style="text-decoration: none; color: #666;">👨‍🏫 Panel Docente</a>
-    </nav>
-
-    <div class="sidebar" style="margin-top: 60px;"> </div>
-    
-    <script src="/static/js/motor_ia.js"></script>
-</body>
-<body>
-    <div style="display: flex; justify-content: space-between; align-items: center;">
-        <h1>👨‍🏫 Panel de Control Docente</h1>
-        <a href="/dashboard" class="btn-refresh">Actualizar Datos</a>
+    <div class="header">
+        <h1 style="color:#7b1fa2">👨‍🏫 Panel Docente FIEE</h1>
+        <div style="display:flex; gap:10px;">
+            <a href="/descargar_reporte?password=uni2026" class="btn" style="background:#10b981">📥 Descargar CSV</a>
+            <a href="/dashboard?password=uni2026" class="btn">🔄 Actualizar</a>
+        </div>
     </div>
-    <div style="display: flex; gap: 15px;">
-    <a href="/descargar_reporte?password=uni2026" class="btn-refresh" style="background: #10b981;">📥 Descargar Reporte CSV</a>
-    <a href="/dashboard?password=uni2026" class="btn-refresh">🔄 Actualizar</a>
-</div>
-
-<div class="info">
-    <p><strong>Falta:</strong> {{ item.Falta_Detectada }}</p>
-    <p><strong>Riesgo Estimado:</strong> +0.5 pts</p>
-    <p><strong>Evidencia:</strong> <a href="/ver_evidencia/{{ item.Ruta_Evidencia.split('/')[-1] }}" target="_blank">Ver foto completa</a></p>
-</div>
-    <div class="grid-evidencias">
+    <div class="grid">
         {% for item in incidencias %}
         <div class="card">
-            <img src="/ver_evidencia/{{ item.Ruta_Evidencia.split('/')[-1] }}" alt="Evidencia">
-            <div class="card-body">
-                <span class="badge">{{ item.Falta_Detectada }}</span>
-                <div class="info">
-                    <p><strong>Alumno:</strong> {{ item.Nombre }}</p>
-                    <p><strong>ID:</strong> {{ item.ID_Estudiante }}</p>
-                    <p><strong>Hora:</strong> {{ item.Fecha_Hora }}</p>
-                </div>
+            <img src="/ver_evidencia/{{ item.Ruta.split('/')[-1] }}" alt="Captura">
+            <div class="content">
+                <b style="color:#ef4444">{{ item.Falta }}</b>
+                <p style="font-size:14px; color:#555;">{{ item.Nombre }} ({{ item.ID }})<br>{{ item.Fecha }}</p>
+                <a href="/ver_evidencia/{{ item.Ruta.split('/')[-1] }}" target="_blank" style="font-size:12px">Ver evidencia completa</a>
             </div>
         </div>
         {% else %}
-        <p>No se han registrado incidencias todavía. El examen está limpio.</p>
+        <p>No hay incidencias registradas.</p>
         {% endfor %}
     </div>
 </body>
