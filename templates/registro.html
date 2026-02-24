@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Registro Estudiante - UNI</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f3f4f6; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .login-card { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 350px; }
+        h2 { color: #7b1fa2; text-align: center; margin-bottom: 30px; }
+        input, select { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #7b1fa2; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 20px; }
+        button:hover { background: #4a148c; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h2>🏛️ Identificación</h2>
+        <form action="/ingresar" method="post">
+            <input type="text" name="nombre" placeholder="Nombre Completo" required>
+            <input type="text" name="uid" placeholder="Código UNI (Ej. 20261234A)" required>
+            <select name="materia">
+                <option value="POO">Programación Orientada a Objetos</option>
+                <option value="BMA15">Cálculo Diferencial</option>
+                <option value="BFI01">Física I</option>
+            </select>
+            <button type="submit">INICIAR EXAMEN</button>
+        </form>
+    </div>
+</body>
+</html>
