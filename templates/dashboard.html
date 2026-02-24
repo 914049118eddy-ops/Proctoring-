@@ -2,38 +2,72 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Panel Docente - UNI</title>
+    <title>Dashboard FIEE - UNI</title>
     <style>
-        body { font-family: sans-serif; background: #f3f4f6; padding: 40px; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
-        .card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        img { width: 100%; height: 180px; object-fit: cover; }
-        .content { padding: 15px; }
-        .btn { background: #7b1fa2; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; }
+        :root { --uni-red: #800000; --bg: #f0f2f5; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 30px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 3px solid var(--uni-red); padding-bottom: 10px; }
+        
+        .main-grid { display: grid; grid-template-columns: 1fr 3fr; gap: 30px; }
+        
+        /* Estilo Lista Asistencia */
+        .aside-list { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .asistencia-item { padding: 10px; border-bottom: 1px solid #eee; font-size: 13px; }
+        .status-dot { height: 8px; width: 8px; background: #10b981; border-radius: 50%; display: inline-block; margin-right: 5px; }
+
+        /* Estilo Alertas */
+        .alerts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+        .card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .card img { width: 100%; height: 160px; object-fit: cover; }
+        .card-content { padding: 15px; }
+        .badge { background: var(--uni-red); color: white; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+        
+        .btn { background: var(--uni-red); color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 14px; }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1 style="color:#7b1fa2">👨‍🏫 Panel Docente FIEE</h1>
-        <div style="display:flex; gap:10px;">
-            <a href="/descargar_reporte?password=uni2026" class="btn" style="background:#10b981">📥 Descargar CSV</a>
-            <a href="/dashboard?password=uni2026" class="btn">🔄 Actualizar</a>
+        <h1 style="color: var(--uni-red); margin: 0;">👨‍🏫 Panel de Control Docente - FIEE</h1>
+        <div style="display: flex; gap: 10px;">
+            <a href="/descargar_reporte?password=uni2026" class="btn" style="background: #27ae60;">📥 Exportar CSV</a>
+            <a href="/dashboard?password=uni2026" class="btn">🔄 Refrescar</a>
         </div>
     </div>
-    <div class="grid">
-        {% for item in incidencias %}
-        <div class="card">
-            <img src="/ver_evidencia/{{ item.Ruta.split('/')[-1] }}" alt="Captura">
-            <div class="content">
-                <b style="color:#ef4444">{{ item.Falta }}</b>
-                <p style="font-size:14px; color:#555;">{{ item.Nombre }} ({{ item.ID }})<br>{{ item.Fecha }}</p>
-                <a href="/ver_evidencia/{{ item.Ruta.split('/')[-1] }}" target="_blank" style="font-size:12px">Ver evidencia completa</a>
+
+    <div class="main-grid">
+        <div class="aside-list">
+            <h3 style="margin-top:0; border-bottom: 2px solid #eee; padding-bottom:10px;">📋 Asistencia ({{ asistencia|length }})</h3>
+            {% for est in asistencia %}
+            <div class="asistencia-item">
+                <span class="status-dot"></span>
+                <strong>{{ est.Nombre }}</strong><br>
+                <small style="color:#666;">ID: {{ est.ID }} | {{ est.Fecha_Ingreso.split(' ')[1] }}</small>
+            </div>
+            {% else %}
+            <p style="color:#999; font-size:13px;">Esperando ingresos...</p>
+            {% endfor %}
+        </div>
+
+        <div>
+            <h3 style="margin-top:0;">🚨 Alertas de Supervisión</h3>
+            <div class="alerts-grid">
+                {% for item in incidencias %}
+                <div class="card">
+                    <img src="/ver_evidencia/{{ item.Ruta.split('/')[-1] }}">
+                    <div class="card-content">
+                        <span class="badge">{{ item.Falta }}</span>
+                        <p style="font-size:14px; margin: 10px 0 5px 0;"><strong>{{ item.Nombre }}</strong></p>
+                        <p style="font-size:12px; color:#666; margin:0;">Código: {{ item.ID }}</p>
+                        <p style="font-size:11px; color:#999; margin-top:5px;">{{ item.Fecha }}</p>
+                    </div>
+                </div>
+                {% else %}
+                <div style="background: white; padding: 40px; text-align: center; border-radius: 10px; width: 100%;">
+                    <p style="color:#999;">No se han detectado conductas sospechosas.</p>
+                </div>
+                {% endfor %}
             </div>
         </div>
-        {% else %}
-        <p>No hay incidencias registradas.</p>
-        {% endfor %}
     </div>
 </body>
 </html>
