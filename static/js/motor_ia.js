@@ -1,16 +1,41 @@
+// ==========================================
+// MOTOR IA + PRISIÓN DIGITAL (FIEE UNI)
+// ==========================================
 const video = document.getElementById('video-alumno');
 const canvas = document.getElementById('canvas-oculto');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-// --- VARIABLES DE PERSISTENCIA (ANTI-FALSAS ALARMAS) ---
 let enviandoAlerta = false;
 let yoloSession = null;
 
-let contadorCelular = 0;
-const FRAMES_REQUERIDOS_CELULAR = 2; // ~0.6s (ya que YOLO corre cada 10 frames)
+// Persistencia para evitar falsos positivos
+let contCelular = 0;
+let contMirada = 0;
+const UMBRAL_CELULAR = 2; // ~0.6s
+const UMBRAL_MIRADA = 15; // ~0.5s
 
-let contadorMirada = 0;
-const FRAMES_REQUERIDOS_MIRADA = 15; // ~0.5s (MediaPipe corre a ~30fps)
+// --- 1. SEGURIDAD DEL NAVEGADOR (LOCKDOWN) ---
+
+// Detectar si cambia de pestaña o ventana (Alt-Tab)
+window.addEventListener('blur', () => {
+    enviarAlertaServidor("CAMBIO DE PESTAÑA/VENTANA (Posible fraude)");
+});
+
+// Bloquear Clic Derecho (Inspeccionar)
+document.addEventListener('contextmenu', e => e.preventDefault());
+
+// Bloquear Copiar y Pegar
+document.addEventListener('copy', e => e.preventDefault());
+document.addEventListener('paste', e => e.preventDefault());
+
+// Forzar Pantalla Completa
+function activarFullscreen() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(e => console.log("Click requerido"));
+    }
+}
+
+// --- 2. COMUNICACIÓN Y UI ---
 
 function agregarEventoVisual(texto) {
     const lista = document.getElementById('lista-eventos');
@@ -21,109 +46,77 @@ function agregarEventoVisual(texto) {
     
     const badge = document.getElementById('estado');
     badge.className = 'status-badge status-alert';
-    badge.innerHTML = `🔴 Infracción: ${texto}`;
-    
+    badge.innerHTML = `🔴 Alerta: ${texto}`;
     setTimeout(() => {
         badge.className = 'status-badge status-ok';
-        badge.innerHTML = '🟢 Monitoreo Estable';
+        badge.innerHTML = '🟢 Monitoreo Activo';
     }, 3000);
 }
 
 async function enviarAlertaServidor(tipo) {
     if (enviandoAlerta) return;
     enviandoAlerta = true;
-    
     agregarEventoVisual(tipo);
     
     ctx.drawImage(video, 0, 0, 640, 480);
-    const imgBase64 = canvas.toDataURL('image/jpeg', 0.5);
+    const img = canvas.toDataURL('image/jpeg', 0.5);
 
     try {
         await fetch('/api/alerta', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({...DATOS_ALUMNO, tipo_falta: tipo, imagen_b64: imgBase64})
+            body: JSON.stringify({...DATOS_ALUMNO, tipo_falta: tipo, imagen_b64: img})
         });
-    } catch (e) { console.error("Error de red:", e); }
-    
+    } catch (e) { console.error(e); }
     setTimeout(() => { enviandoAlerta = false; }, 5000);
 }
 
-// --- MEDIAPIPE CON PERSISTENCIA ---
-const faceMesh = new FaceMesh({
-    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-});
-faceMesh.setOptions({maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5});
+// --- 3. MOTORES DE IA ---
 
-faceMesh.onResults((results) => {
-    if (results.multiFaceLandmarks?.length > 0) {
-        const landmarks = results.multiFaceLandmarks[0];
-        const dX = Math.abs(landmarks[468].x - landmarks[33].x);
-        
+// MediaPipe (Mirada)
+const faceMesh = new FaceMesh({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
+faceMesh.setOptions({maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5});
+faceMesh.onResults((res) => {
+    if (res.multiFaceLandmarks?.length > 0) {
+        const dX = Math.abs(res.multiFaceLandmarks[0][468].x - res.multiFaceLandmarks[0][33].x);
         if (dX < 0.012) {
-            contadorMirada++;
-            if (contadorMirada > FRAMES_REQUERIDOS_MIRADA) {
-                enviarAlertaServidor("Mirada Desviada Prolongada");
-                contadorMirada = 0;
-            }
-        } else {
-            contadorMirada = 0; // Reset si vuelve a mirar al centro
-        }
+            contMirada++;
+            if (contMirada > UMBRAL_MIRADA) { enviarAlertaServidor("Mirada Desviada"); contMirada = 0; }
+        } else { contMirada = 0; }
     }
 });
 
-// --- YOLOv8 CON PERSISTENCIA ---
+// YOLOv8 (Objetos)
 async function initYOLO() {
-    try {
-        yoloSession = await ort.InferenceSession.create('/static/yolov8n.onnx', {executionProviders: ['wasm']});
-        console.log("YOLOv8 Online");
-    } catch (e) { console.error("ONNX Error:", e); }
+    yoloSession = await ort.InferenceSession.create('/static/yolov8n.onnx', {executionProviders: ['wasm']});
 }
 
 async function inferenciaYOLO() {
     if (!yoloSession || enviandoAlerta) return;
-    
     ctx.drawImage(video, 0, 0, 640, 640);
-    const pixels = ctx.getImageData(0, 0, 640, 640).data;
+    const data = ctx.getImageData(0, 0, 640, 640).data;
     const input = new Float32Array(3 * 640 * 640);
-    
     for (let i = 0; i < 640 * 640; i++) {
-        input[i] = pixels[i*4]/255.0;
-        input[640*640+i] = pixels[i*4+1]/255.0;
-        input[2*640*640+i] = pixels[i*4+2]/255.0;
+        input[i] = data[i*4]/255; input[640*640+i] = data[i*4+1]/255; input[2*640*640+i] = data[i*4+2]/255;
     }
-    
-    const tensor = new ort.Tensor('float32', input, [1, 3, 640, 640]);
-    const output = await yoloSession.run({images: tensor});
-    const data = output.output0.data;
-    
-    let celularEncontrado = false;
+    const output = await yoloSession.run({images: new ort.Tensor('float32', input, [1, 3, 640, 640])});
+    const prob = output.output0.data;
+    let detectado = false;
     for (let i = 0; i < 8400; i++) {
-        if (data[8400 * 71 + i] > 0.45) { // Bajamos un poco el umbral pero pedimos persistencia
-            celularEncontrado = true;
-            break;
-        }
+        if (prob[8400 * 71 + i] > 0.45) { detectado = true; break; }
     }
-
-    if (celularEncontrado) {
-        contadorCelular++;
-        if (contadorCelular >= FRAMES_REQUERIDOS_CELULAR) {
-            enviarAlertaServidor("Uso de Celular Confirmado");
-            contadorCelular = 0;
-        }
-    } else {
-        contadorCelular = 0; // Si desaparece el celular un solo frame, reiniciamos cuenta
-    }
+    if (detectado) {
+        contCelular++;
+        if (contCelular >= UMBRAL_CELULAR) { enviarAlertaServidor("Celular Detectado"); contCelular = 0; }
+    } else { contCelular = 0; }
 }
 
 const camera = new Camera(video, {
     onFrame: async () => {
         await faceMesh.send({image: video});
-        frameCounter++;
-        if (frameCounter % 10 === 0) await inferenciaYOLO();
+        if (Math.random() > 0.8) await inferenciaYOLO();
     },
     width: 640, height: 480
 });
-let frameCounter = 0;
 
 initYOLO().then(() => camera.start());
