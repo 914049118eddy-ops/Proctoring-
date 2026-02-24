@@ -2,27 +2,51 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Registro FIEE - UNI</title>
+    <title>Portal UNI - FIEE</title>
     <style>
-        body { font-family: sans-serif; background: #f0f2f5; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 320px; text-align: center; }
-        input, select, button { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
-        button { background: #7b1fa2; color: white; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; }
-        button:hover { background: #4a148c; }
+        :root { --primary: #7b1fa2; --bg: #f3f4f6; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .card { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 350px; }
+        .tabs { display: flex; margin-bottom: 20px; border-bottom: 2px solid #eee; }
+        .tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; font-weight: bold; color: #999; }
+        .tab.active { color: var(--primary); border-bottom: 2px solid var(--primary); }
+        form { display: none; }
+        form.active { display: block; }
+        input, select { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 15px; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h2 style="color:#7b1fa2">🏛️ UNI Proctoring</h2>
-        <form action="/ingresar" method="post">
+        <h2 style="text-align:center; color:var(--primary)">🏛️ FIEE Proctoring</h2>
+        
+        <div class="tabs">
+            <div id="t-est" class="tab active" onclick="show('estudiante')">Estudiante</div>
+            <div id="t-doc" class="tab" onclick="show('docente')">Docente</div>
+        </div>
+
+        <form id="f-est" class="active" action="/ingresar" method="post">
+            <input type="hidden" name="role" value="estudiante">
             <input type="text" name="nombre" placeholder="Nombre Completo" required>
             <input type="text" name="uid" placeholder="Código UNI" required>
-            <select name="materia">
-                <option value="POO">Programación Orientada a Objetos</option>
-                <option value="BFI01">Física I</option>
-            </select>
+            <select name="materia"><option>POO</option><option>BFI01</option></select>
             <button type="submit">INICIAR EXAMEN</button>
         </form>
+
+        <form id="f-doc" action="/ingresar" method="post">
+            <input type="hidden" name="role" value="docente">
+            <input type="password" name="password" placeholder="Clave Docente" required>
+            <button type="submit">VER REGISTROS</button>
+        </form>
     </div>
+
+    <script>
+        function show(role) {
+            document.getElementById('f-est').classList.toggle('active', role === 'estudiante');
+            document.getElementById('f-doc').classList.toggle('active', role === 'docente');
+            document.getElementById('t-est').classList.toggle('active', role === 'estudiante');
+            document.getElementById('t-doc').classList.toggle('active', role === 'docente');
+        }
+    </script>
 </body>
 </html>
