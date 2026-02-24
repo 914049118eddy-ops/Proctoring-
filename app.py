@@ -87,6 +87,7 @@ async def recibir_alerta(alerta: AlertaProctoring, background_tasks: BackgroundT
     return {"status": "ok", "mensaje": "Alerta procesada exitosamente"}
 
 if __name__ == "__main__":
-    print("🚀 Iniciando Motor de Proctoring en http://localhost:8000")
-    # Cambiamos "main" por "app" porque tu archivo se llama app.py
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    # Render usa la variable de entorno PORT
+    port = int(os.environ.get("PORT", 8000))
+    # Importante: host 0.0.0.0 para que sea accesible externamente
+    uvicorn.run("app:app", host="0.0.0.0", port=port)
