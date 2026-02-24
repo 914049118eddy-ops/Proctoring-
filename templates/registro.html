@@ -2,23 +2,29 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Portal UNI - FIEE</title>
+    <title>Portal Académico - UNI</title>
     <style>
-        :root { --primary: #7b1fa2; --bg: #f3f4f6; }
+        :root { --uni-red: #800000; --uni-gray: #333; --bg: #f4f4f7; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .card { background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 350px; }
-        .tabs { display: flex; margin-bottom: 20px; border-bottom: 2px solid #eee; }
-        .tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; font-weight: bold; color: #999; }
-        .tab.active { color: var(--primary); border-bottom: 2px solid var(--primary); }
+        .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 360px; border-top: 6px solid var(--uni-red); }
+        .header { text-align: center; margin-bottom: 30px; }
+        .header h2 { margin: 0; color: var(--uni-red); letter-spacing: 1px; }
+        .tabs { display: flex; margin-bottom: 20px; border-bottom: 1px solid #ddd; }
+        .tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; color: #777; font-weight: 600; }
+        .tab.active { color: var(--uni-red); border-bottom: 3px solid var(--uni-red); }
         form { display: none; }
         form.active { display: block; }
-        input, select { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
-        button { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 15px; }
+        input, select { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; background: #fafafa; }
+        button { width: 100%; padding: 14px; background: var(--uni-red); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 15px; text-transform: uppercase; }
+        button:hover { background: #600000; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h2 style="text-align:center; color:var(--primary)">🏛️ FIEE Proctoring</h2>
+        <div class="header">
+            <h2>SISTEMA PROCTORING</h2>
+            <small style="color: #666;">Facultad de Ingeniería Eléctrica y Electrónica</small>
+        </div>
         
         <div class="tabs">
             <div id="t-est" class="tab active" onclick="show('estudiante')">Estudiante</div>
@@ -27,25 +33,28 @@
 
         <form id="f-est" class="active" action="/ingresar" method="post">
             <input type="hidden" name="role" value="estudiante">
-            <input type="text" name="nombre" placeholder="Nombre Completo" required>
-            <input type="text" name="uid" placeholder="Código UNI" required>
-            <select name="materia"><option>POO</option><option>BFI01</option></select>
-            <button type="submit">INICIAR EXAMEN</button>
+            <input type="text" name="nombre" placeholder="Nombres y Apellidos" required>
+            <input type="text" name="uid" placeholder="Código de Estudiante" required>
+            <select name="materia">
+                <option value="POO">Programación Orientada a Objetos</option>
+                <option value="BFI01">Física I</option>
+            </select>
+            <button type="submit">Validar e Ingresar</button>
         </form>
 
         <form id="f-doc" action="/ingresar" method="post">
             <input type="hidden" name="role" value="docente">
-            <input type="password" name="password" placeholder="Clave Docente" required>
-            <button type="submit">VER REGISTROS</button>
+            <input type="password" name="password" placeholder="Contraseña Institucional" required>
+            <button type="submit">Acceso Administrativo</button>
         </form>
     </div>
 
     <script>
         function show(role) {
-            document.getElementById('f-est').classList.toggle('active', role === 'estudiante');
-            document.getElementById('f-doc').classList.toggle('active', role === 'docente');
-            document.getElementById('t-est').classList.toggle('active', role === 'estudiante');
-            document.getElementById('t-doc').classList.toggle('active', role === 'docente');
+            document.getElementById('f-est').className = role === 'estudiante' ? 'active' : '';
+            document.getElementById('f-doc').className = role === 'docente' ? 'active' : '';
+            document.getElementById('t-est').className = 'tab ' + (role === 'estudiante' ? 'active' : '');
+            document.getElementById('t-doc').className = 'tab ' + (role === 'docente' ? 'active' : '');
         }
     </script>
 </body>
