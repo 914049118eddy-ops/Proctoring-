@@ -9,8 +9,9 @@ from pydantic import BaseModel
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-# Configuración básica
+# Configuración de Archivos
 DB_PATH = "database.csv"
+ASISTENCIA_PATH = "asistencia.csv"
 CLAVE_DOCENTE = "uni2026"
 os.makedirs("evidencias", exist_ok=True)
 csv_lock = threading.Lock()
@@ -21,23 +22,27 @@ app.mount("/ver_evidencia", StaticFiles(directory="evidencias"), name="evidencia
 class Alerta(BaseModel):
     uid: str; nombre: str; materia: str; tipo_falta: str; imagen_b64: str
 
-# 1. RUTA PRINCIPAL (Portal de acceso)
 @app.get("/", response_class=HTMLResponse)
 async def login(request: Request):
-    # Usamos tu archivo registro.html como portal único
     return templates.TemplateResponse("registro.html", {"request": request})
 
-# 2. PROCESO DE ENTRADA
 @app.post("/ingresar")
 async def ingresar(role: str = Form(...), nombre: str = Form(None), uid: str = Form(None), materia: str = Form(None), password: str = Form(None)):
     if role == "docente":
         if password == CLAVE_DOCENTE:
             return RedirectResponse(url=f"/dashboard?password={password}", status_code=303)
         return HTMLResponse("<h1>❌ Clave incorrecta</h1>", status_code=403)
-    # Si es alumno, va al examen
+    
+    # --- REGISTRO DE ASISTENCIA ---
+    registro_asist = {
+        "Fecha_Ingreso": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "ID": uid, "Nombre": nombre, "Materia": materia, "Estado": "En Examen"
+    }
+    with csv_lock:
+        pd.DataFrame([registro_asist]).to_csv(ASISTENCIA_PATH, mode='a', header=not os.path.exists(ASISTENCIA_PATH), index=False)
+    
     return RedirectResponse(url=f"/examen?uid={uid}&nombre={nombre}&materia={materia}", status_code=303)
 
-# 3. VISTAS DE TRABAJO
 @app.get("/examen", response_class=HTMLResponse)
 async def examen(request: Request, uid: str, nombre: str, materia: str):
     return templates.TemplateResponse("cliente.html", {"request": request, "uid": uid, "nombre": nombre, "materia": materia})
@@ -45,10 +50,18 @@ async def examen(request: Request, uid: str, nombre: str, materia: str):
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request, password: str = None):
     if password != CLAVE_DOCENTE: return RedirectResponse(url="/")
+    
+    # Leer incidencias
     incidencias = pd.read_csv(DB_PATH).to_dict(orient="records") if os.path.exists(DB_PATH) else []
-    return templates.TemplateResponse("dashboard.html", {"request": request, "incidencias": incidencias[::-1]})
+    # Leer asistencia
+    asistencia = pd.read_csv(ASISTENCIA_PATH).to_dict(orient="records") if os.path.exists(ASISTENCIA_PATH) else []
+    
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request, 
+        "incidencias": incidencias[::-1], 
+        "asistencia": asistencia[::-1]
+    })
 
-# 4. API Y REPORTES
 @app.post("/api/alerta")
 async def api_alerta(alerta: Alerta, bt: BackgroundTasks):
     def save():
@@ -62,7 +75,7 @@ async def api_alerta(alerta: Alerta, bt: BackgroundTasks):
 
 @app.get("/descargar_reporte")
 async def reporte(password: str = None):
-    if password == CLAVE_DOCENTE and os.path.exists(DB_PATH): return FileResponse(DB_PATH, filename="Reporte_FIEE.csv")
+    if password == CLAVE_DOCENTE and os.path.exists(DB_PATH): return FileResponse(DB_PATH, filename="Reporte_Final.csv")
     raise HTTPException(status_code=404)
 
 if __name__ == "__main__":
