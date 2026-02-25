@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Proctoring FIEE - UNI</title>
+    {% if vista == 'examen' %}
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+    {% endif %}
+    
+    <style>
+        :root { --uni: #800000; --bg: #f4f7f6; font-family: 'Segoe UI', sans-serif; }
+        body { margin: 0; background: var(--bg); }
+        .btn { background: var(--uni); color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .btn-green { background: #28a745; }
+    </style>
+</head>
+<body>
+
+    {% if vista == 'registro' %}
+    <style>
+        .login-wrap { display: flex; align-items: center; justify-content: center; height: 100vh; }
+        .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 360px; border-top: 6px solid var(--uni); }
+        .tabs { display: flex; margin-bottom: 20px; border-bottom: 1px solid #ddd; }
+        .tab { flex: 1; padding: 10px; text-align: center; cursor: pointer; color: #777; font-weight: 600; }
+        .tab.active { color: var(--uni); border-bottom: 3px solid var(--uni); }
+        form { display: none; } form.active { display: block; }
+        input, select { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; background: #fafafa; }
+        .btn-full { width: 100%; padding: 14px; margin-top: 15px; text-transform: uppercase; }
+    </style>
+    <div class="login-wrap">
+        <div class="card">
+            <h2 style="text-align: center; color: var(--uni); margin-top: 0;">SISTEMA PROCTORING</h2>
+            <p style="text-align: center; color: #666; font-size: 13px;">Facultad de Ingeniería Eléctrica y Electrónica</p>
+            
+            <div class="tabs">
+                <div id="t-est" class="tab active" onclick="show('estudiante')">Estudiante</div>
+                <div id="t-doc" class="tab" onclick="show('docente')">Docente</div>
+            </div>
+
+            <form id="f-est" class="active" action="/ingresar" method="post">
+                <input type="hidden" name="role" value="estudiante">
+                <input type="text" name="nombre" placeholder="Nombres y Apellidos" required>
+                <input type="text" name="uid" placeholder="Código de Estudiante" required>
+                <input type="text" name="sala" placeholder="Código de la Sala (Ej: FINAL_POO)" required>
+                <button type="submit" class="btn btn-full">Validar e Ingresar</button>
+            </form>
+
+            <form id="f-doc" action="/ingresar" method="post">
+                <input type="hidden" name="role" value="docente">
+                <input type="password" name="password" placeholder="Contraseña Institucional" required>
+                <button type="submit" class="btn btn-full">Acceso Administrativo</button>
+            </form>
+        </div>
+    </div>
+    <script>
+        function show(role) {
+            document.getElementById('f-est').className = role === 'estudiante' ? 'active' : '';
+            document.getElementById('f-doc').className = role === 'docente' ? 'active' : '';
+            document.getElementById('t-est').className = 'tab ' + (role === 'estudiante' ? 'active' : '');
+            document.getElementById('t-doc').className = 'tab ' + (role === 'docente' ? 'active' : '');
+        }
+    </script>
+
+
+    {% elif vista == 'examen' %}
+    <style>
+        .layout-ex { display: flex; height: 100vh; overflow: hidden; }
+        .exam-area { flex: 2; padding: 30px; overflow-y: auto; background: white; border-right: 2px solid #ddd; }
+        .sidebar { flex: 1; padding: 20px; display: flex; flex-direction: column; align-items: center; background: white; }
+        video { width: 100%; border-radius: 12px; transform: scaleX(-1); background: #000; margin-bottom: 10px; }
+        .status-badge { padding: 10px 20px; border-radius: 50px; font-weight: bold; width: 100%; text-align: center; box-sizing: border-box; }
+        .status-ok { background: #d1fae5; color: #10b981; border: 1px solid #10b981; }
+        .status-alert { background: #fee2e2; color: #ef4444; border: 1px solid #ef4444; }
+        .question-card { background: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+        .option-label { display: block; padding: 10px; margin: 8px 0; background: white; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; }
+    </style>
+    <div class="layout-ex">
+        <div class="exam-area">
+            <div style="background: #e3f2fd; color: #0d47a1; padding: 15px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; border-left: 5px solid #2196f3;">
+                🛡️ <b>Aviso de Confidencialidad:</b> Los docentes no ven tu cámara en vivo. El sistema captura evidencias solo si detecta anomalías.
+            </div>
+            <h2 style="color: var(--uni); border-bottom: 2px solid var(--uni); padding-bottom: 10px;">📝 Sala: {{ sala }}</h2>
+            
+            {% if config.tipo == 'tradicional' %}
+                <img src="{{ config.url }}" style="width: 100%; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 20px;">
+                <textarea id="resp_txt" style="width:100%; height:150px; padding:15px; border-radius:8px;" placeholder="Escribe aquí tus respuestas..."></textarea>
+            {% else %}
+                {% for preg in config.preguntas %}
+                <div class="question-card">
+                    <p style="font-weight:bold; margin-top:0;">{{ loop.index }}. {{ preg.pregunta }}</p>
+                    {% for opc in preg.opciones %}
+                    <label class="option-label"><input type="radio" name="preg_{{ loop.index0 }}" value="{{ opc }}"> {{ opc }}</label>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            {% endif %}
+        </div>
+
+        <div class="sidebar">
+            <div style="background: var(--uni); color: white; width: 100%; padding: 12px; border-radius: 8px; text-align: center; margin-bottom: 15px; box-sizing: border-box;">
+                <strong style="font-size: 16px;">{{ nombre }}</strong><br>
+                <span style="font-size: 12px; opacity: 0.8;">ID: {{ uid }}</span>
+            </div>
+            <video id="video-alumno" autoplay playsinline></video>
+            <canvas id="canvas-oculto" style="display:none" width="640" height="480"></canvas>
+            <div id="estado" class="status-badge status-ok">⏳ Iniciando Cámara...</div>
+            
+            <form action="/finalizar" method="post" style="width:100%" onsubmit="prepararEnvio()">
+                <input type="hidden" name="uid" value="{{ uid }}">
+                <input type="hidden" name="respuestas" id="input_respuestas">
+                <button type="submit" class="btn btn-green" style="width:100%; margin-top:15px; padding:15px;">🏁 ENTREGAR EXAMEN</button>
+            </form>
+            
+            <div style="width: 100%; margin-top: 15px; height: 150px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 10px; font-size: 12px; box-sizing: border-box;">
+                <strong style="color: #666; display: block; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Bitácora de IA</strong>
+                <div id="lista-eventos"></div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const DATOS_ALUMNO = { uid: "{{ uid }}", nombre: "{{ nombre }}", sala: "{{ sala }}" };
+        function prepararEnvio() {
+            let data = {};
+            if (document.getElementById('resp_txt')) {
+                data.texto = document.getElementById('resp_txt').value;
+            } else {
+                document.querySelectorAll('.question-card').forEach((q, i) => {
+                    const chk = q.querySelector(`input[name="preg_${i}"]:checked`);
+                    data[`Pregunta_${i+1}`] = chk ? chk.value : "Sin responder";
+                });
+            }
+            document.getElementById('input_respuestas').value = JSON.stringify(data);
+        }
+    </script>
+    <script src="/static/js/motor_ia.js"></script>
+
+
+    {% elif vista == 'dashboard' %}
+    <style>
+        .dash-body { padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid var(--uni); padding-bottom: 10px; margin-bottom: 20px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
+        .stat-card { background: white; padding: 15px; border-radius: 8px; text-align: center; border-top: 4px solid var(--uni); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .stat-card h2 { margin: 0; color: var(--uni); font-size: 28px; }
+        .main-layout { display: grid; grid-template-columns: 350px 1fr; gap: 20px; height: calc(100vh - 180px); }
+        .panel { background: white; border-radius: 10px; padding: 20px; overflow-y: auto; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        input, select, textarea { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        .alert-card { border: 1px solid #fee2e2; border-radius: 8px; overflow: hidden; margin-bottom: 15px; display: flex; background: #fff; }
+        .alert-card img { width: 120px; height: 90px; object-fit: cover; }
+    </style>
+    <div class="dash-body">
+        <div class="header">
+            <h1 style="color: var(--uni); margin: 0;">🏛️ Gestión Académica FIEE</h1>
+            <button onclick="location.reload()" class="btn">🔄 Actualizar</button>
+        </div>
+        <div class="stats-grid">
+            <div class="stat-card"><h2>{{ stats.total }}</h2><p style="margin:0;font-size:12px;">REGISTRADOS</p></div>
+            <div class="stat-card"><h2>{{ stats.online }}</h2><p style="margin:0;font-size:12px;">RINDIENDO EXAMEN 🟢</p></div>
+            <div class="stat-card"><h2>{{ stats.alertas }}</h2><p style="margin:0;font-size:12px;">INCIDENTES 🚨</p></div>
+            <div class="stat-card"><h2 style="color:{{ 'red' if stats.bloqueados > 0 else 'green' }}">{{ stats.bloqueados }}</h2><p style="margin:0;font-size:12px;">CÁMARAS TAPADAS ⛔</p></div>
+        </div>
+        <div class="main-layout">
+            <div class="panel">
+                <h3 style="margin-top:0; color:var(--uni); border-bottom: 1px solid #eee; padding-bottom:5px;">1. Crear Sala</h3>
+                <form action="/crear_sala" method="post">
+                    <input type="hidden" name="password" value="{{ password }}">
+                    <input type="text" name="nombre_sala" placeholder="Ej: EXAMEN_FINAL_POO" required>
+                    <button type="submit" class="btn" style="width:100%">Abrir Sala</button>
+                </form>
+                <h3 style="margin-top:30px; color:var(--uni); border-bottom: 1px solid #eee; padding-bottom:5px;">2. Configurar Examen</h3>
+                <form action="/configurar_examen" method="post">
+                    <input type="hidden" name="password" value="{{ password }}">
+                    <select name="tipo">
+                        <option value="tradicional">Modo: Imagen / PDF</option>
+                        <option value="interactivo">Modo: Test Interactivo</option>
+                    </select>
+                    <textarea name="contenido" rows="5" placeholder="Pega el link de la imagen o el código JSON del examen..." required></textarea>
+                    <button type="submit" class="btn btn-green" style="width:100%">Publicar Contenido</button>
+                </form>
+            </div>
+            <div class="panel">
+                <h3 style="margin-top:0; color:var(--uni); border-bottom: 1px solid #eee; padding-bottom:5px;">👁️ Resultados y Monitoreo</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div>
+                        <h4>🚨 Evidencias de IA</h4>
+                        {% for item in incidencias %}
+                        <div class="alert-card">
+                            <img src="/ver_evidencia/{{ item.Ruta.split('/')[-1] }}">
+                            <div style="padding:10px;">
+                                <b style="color:#ef4444; font-size:12px;">{{ item.Falta }}</b><br>
+                                <span style="font-size:13px;"><b>{{ item.Nombre }}</b></span><br>
+                                <span style="color:#666; font-size:11px;">{{ item.Fecha }}</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div>
+                        <h4>📑 Respuestas Entregadas</h4>
+                        {% for res in respuestas %}
+                        <div style="background: #f8fafc; border-left: 4px solid #10b981; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+                            <b>ID Alumno:</b> {{ res.ID }}<br>
+                            <span style="font-size: 11px; color: #666;">Hora: {{ res.Fecha }}</span>
+                            <hr style="border:0; border-top:1px solid #ddd; margin: 8px 0;">
+                            <div style="font-size: 13px;">
+                                {% for pregunta, respuesta in res.Detalle.items() %}
+                                    <b>{{ pregunta }}:</b> {{ respuesta }}<br>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    {% elif vista == 'confirmacion' %}
+    <div style="display:flex; justify-content:center; align-items:center; height:100vh;">
+        <div style="background:white; padding:40px; border-radius:15px; box-shadow:0 5px 15px rgba(0,0,0,0.1); text-align:center;">
+            <h1 style="color:#28a745; margin-bottom:10px;">✅ Examen Enviado</h1>
+            <p style="color:#555;">Tus respuestas han sido registradas en el sistema de la FIEE.</p>
+            <button onclick="location.href='/'" class="btn" style="margin-top:20px;">Volver al Inicio</button>
+        </div>
+    </div>
+    {% endif %}
+
+</body>
+</html>
