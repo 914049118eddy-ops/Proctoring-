@@ -1,5 +1,5 @@
 // ==========================================
-// MOTOR IA V7.0 - FIEE UNI (GAZE RATIO & HIGH RECALL)
+// MOTOR IA V8.0 - FIEE UNI (YOLO CORREGIDO Y UNIFICADO)
 // ==========================================
 const video = document.getElementById('video-alumno');
 const canvas = document.getElementById('canvas-oculto');
@@ -9,7 +9,7 @@ let enviandoAlerta = false;
 let yoloSession = null;
 let frameCounter = 0;
 
-// --- PRISIÓN DIGITAL ---
+// --- 1. PRISIÓN DIGITAL ---
 window.addEventListener('blur', () => enviarAlerta("Cambio de Pestaña (Posible Fraude)", true));
 document.addEventListener('contextmenu', e => e.preventDefault());
 document.addEventListener('copy', e => e.preventDefault());
@@ -27,8 +27,15 @@ function agregarEventoVisual(texto) {
     const badge = document.getElementById('estado');
     if(badge) {
         badge.className = 'status-badge status-alert';
+        badge.style.color = '#ef4444';
+        badge.style.borderColor = '#ef4444';
         badge.innerHTML = `🔴 Infracción: ${texto}`;
-        setTimeout(() => { badge.className = 'status-badge status-ok'; badge.innerHTML = '🟢 Monitoreo Activo'; }, 4000);
+        setTimeout(() => { 
+            badge.className = 'status-badge status-ok'; 
+            badge.style.color = '#10b981';
+            badge.style.borderColor = '#10b981';
+            badge.innerHTML = '🟢 Monitoreo Activo'; 
+        }, 4000);
     }
 }
 
@@ -41,7 +48,7 @@ async function enviarAlerta(tipo, camOk = true) {
     const img = canvas.toDataURL('image/jpeg', 0.6);
 
     try {
-        await fetch('/api/alerta', {
+        await fetch('/api/alerta_ia', { // Ruta actualizada a la nueva API POO
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({...DATOS_ALUMNO, tipo_falta: tipo, imagen_b64: img, camara_ok: camOk})
@@ -50,47 +57,32 @@ async function enviarAlerta(tipo, camOk = true) {
     setTimeout(() => enviandoAlerta = false, 4000); 
 }
 
-// --- ALGORITMO DE MIRADA ESTRICTA (GAZE RATIO) ---
+// --- 2. MEDIAPIPE (MIRADA Y CÁMARA TAPADA) ---
 let contMirada = 0;
-const UMBRAL_MIRADA = 5; // ~0.15s: Apenas voltee, lo detecta
-
 const faceMesh = new FaceMesh({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
 faceMesh.setOptions({maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5}); 
 
 faceMesh.onResults(async (res) => {
-    // 1. Detección Cámara Tapada
     ctx.drawImage(video, 0, 0, 10, 10); 
     const data = ctx.getImageData(0, 0, 10, 10).data;
     let brillo = 0; for (let i = 0; i < data.length; i += 4) brillo += (data[i]+data[i+1]+data[i+2])/3;
     if ((brillo/100) < 15) { enviarAlerta("CÁMARA TAPADA", false); return; }
 
-    // 2. Detección de Mirada por Ratio (Invariante a la distancia)
     if (res.multiFaceLandmarks && res.multiFaceLandmarks.length > 0) {
         const p = res.multiFaceLandmarks[0];
-        
-        // Ojo Izquierdo: 33 (interior), 133 (exterior), 468 (iris)
         const ancho_ojo = Math.abs(p[133].x - p[33].x);
         const distancia_iris = Math.abs(p[468].x - p[33].x);
-        
-        // Ratio: 0.5 es mirando al frente. < 0.35 izquierda, > 0.65 derecha.
         const ratio = distancia_iris / ancho_ojo;
         
-        // Hacerlo ESTRICTO: Si sale del rango [0.40 - 0.60] es trampa.
-        const desviada = ratio < 0.40 || ratio > 0.60;
-
-        if (desviada) {
+        if (ratio < 0.40 || ratio > 0.60) {
             contMirada++;
-            if (contMirada > UMBRAL_MIRADA) {
-                enviarAlerta(`Mirada Desviada (Ratio: ${ratio.toFixed(2)})`);
-                contMirada = 0;
-            }
+            if (contMirada > 5) { enviarAlerta("Mirada Desviada"); contMirada = 0; }
         } else { contMirada = 0; }
     }
 });
 
-// --- ALGORITMO DE OBJETOS (YOLOv8 ALTA SENSIBILIDAD) ---
-let contCelular = 0;
-const CONFIANZA_CELULAR = 0.28; // Extrema sensibilidad a celulares
+// --- 3. YOLOv8 CORREGIDO (DETECCIÓN DE CELULARES Y LIBROS) ---
+let contObjeto = 0;
 
 async function inferirYOLO() {
     if (!yoloSession || enviandoAlerta) return;
@@ -109,39 +101,54 @@ async function inferirYOLO() {
         const output = await yoloSession.run({images: tensor});
         const prob = output.output0.data;
         
-        let celular = false;
+        // Búsqueda del tensor máximo para celular (clase 67 -> índice 71) y libro (clase 73 -> índice 77)
+        let max_celular_conf = 0;
+        let max_libro_conf = 0;
         
-        // Recorremos el tensor buscando la clase 67 (Teléfono)
         for (let i = 0; i < 8400; i++) {
-            if (prob[71 * 8400 + i] > CONFIANZA_CELULAR) { celular = true; break; }
+            const conf_celular = prob[71 * 8400 + i];
+            const conf_libro = prob[77 * 8400 + i];
+            
+            if (conf_celular > max_celular_conf) max_celular_conf = conf_celular;
+            if (conf_libro > max_libro_conf) max_libro_conf = conf_libro;
         }
+
+        // Puedes ver la confianza real en tu consola pulsando F12
+        // console.log("Confianza Celular:", max_celular_conf, "| Libro:", max_libro_conf);
         
-        if (celular) {
-            contCelular++;
-            if (contCelular >= 2) { enviarAlerta("Celular Detectado"); contCelular = 0; }
-        } else { contCelular = 0; }
+        // Umbral bajado a 0.20 para asegurar la detección en webcams
+        if (max_celular_conf > 0.20) {
+            contObjeto++;
+            if (contObjeto >= 2) { enviarAlerta("Teléfono Celular Detectado"); contObjeto = 0; }
+        } else if (max_libro_conf > 0.25) {
+            contObjeto++;
+            if (contObjeto >= 2) { enviarAlerta("Libro/Apuntes Detectados"); contObjeto = 0; }
+        } else {
+            contObjeto = 0;
+        }
         
     } catch(e) { console.error("Error YOLO:", e); }
 }
 
-// --- ARRANQUE ASÍNCRONO ---
+// --- 4. ARRANQUE ASÍNCRONO ---
 const camera = new Camera(video, {
     onFrame: async () => {
         try {
             await faceMesh.send({image: video});
             frameCounter++;
-            if (frameCounter % 5 === 0) await inferirYOLO(); // Analizar rápido (cada ~0.15s)
+            if (frameCounter % 5 === 0) await inferirYOLO(); // Analizar rápido
         } catch(e) {}
     },
     width: 640, height: 480
 });
 
 camera.start().then(() => {
-    document.getElementById('estado').innerHTML = "⏳ Cámara OK. Cargando Tensor...";
     setTimeout(async () => {
         try {
             yoloSession = await ort.InferenceSession.create('/static/yolov8n.onnx', {executionProviders: ['wasm']});
             document.getElementById('estado').innerHTML = "🟢 Monitoreo Activo";
+            document.getElementById('estado').style.color = '#10b981';
+            document.getElementById('estado').style.borderColor = '#10b981';
         } catch(e) { console.error(e); }
     }, 500);
 });
