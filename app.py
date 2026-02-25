@@ -69,15 +69,19 @@ class GestorAcademicoLMS:
         }
 
     def registrar_nueva_sala(self, nombre_sala: str) -> None:
-        registro = {"Sala": nombre_sala, "Creado": datetime.now().strftime("%Y-%m-%d %H:%M")}
+        # Validación para no crear salas vacías
+        if not nombre_sala or nombre_sala.strip() == "":
+            return
+        registro = {"Sala": nombre_sala.upper(), "Creado": datetime.now().strftime("%Y-%m-%d %H:%M")}
         self.repo.guardar_registro("salas", registro)
 
     def verificar_existencia_sala(self, sala: str) -> bool:
         salas = self.repo.obtener_datos("salas")
-        return any(s['Sala'] == sala for s in salas)
+        # Comparación robusta
+        return any(s['Sala'].strip().upper() == sala.strip().upper() for s in salas)
 
     def matricular_alumno_examen(self, uid: str, nombre: str, sala: str) -> None:
-        asist = {"ID": uid, "Nombre": nombre, "Sala": sala, "Estado": "EN EXAMEN", "Camara": "OK", "Inicio": datetime.now().strftime("%H:%M:%S")}
+        asist = {"ID": uid, "Nombre": nombre, "Sala": sala.upper(), "Estado": "EN EXAMEN", "Camara": "OK", "Inicio": datetime.now().strftime("%H:%M:%S")}
         self.repo.guardar_registro("asistencia", asist)
 
     def procesar_entrega_examen(self, uid: str, respuestas_json: str) -> None:
@@ -173,7 +177,6 @@ class ModeloTensorIA(BaseModel):
 # ==========================================
 @app.get("/", response_class=HTMLResponse)
 async def pagina_inicio(request: Request):
-    # Renderizamos index.html enviando el parámetro vista='registro'
     return templates.TemplateResponse("index.html", {"request": request, "vista": "registro"})
 
 @app.post("/procesar_acceso")
@@ -189,10 +192,17 @@ async def procesar_acceso(role: str = Form(...), nombre: str = Form(None), uid: 
     lms.matricular_alumno_examen(uid, nombre, sala)
     return RedirectResponse(url=f"/examen?uid={uid}&nombre={nombre}&sala={sala}", status_code=303)
 
+# ---> AQUÍ ESTÁ LA RUTA QUE FALTABA <---
+@app.post("/crear_sala")
+async def crear_sala_nueva(nombre_sala: str = Form(...), password: str = Form(...)):
+    """Endpoint para que el profesor registre nuevas salas de examen."""
+    if password == CLAVE_INSTITUCIONAL:
+        lms.registrar_nueva_sala(nombre_sala)
+    return RedirectResponse(url=f"/dashboard?password={password}", status_code=303)
+
 @app.get("/examen", response_class=HTMLResponse)
 async def vista_examen(request: Request, uid: str, nombre: str, sala: str):
     config_actual = lms.obtener_configuracion_actual()
-    # Usamos index.html pero con vista='examen'
     return templates.TemplateResponse("index.html", {
         "request": request, "vista": "examen", 
         "uid": uid, "nombre": nombre, "sala": sala, "config": config_actual
@@ -201,7 +211,6 @@ async def vista_examen(request: Request, uid: str, nombre: str, sala: str):
 @app.post("/finalizar_evaluacion")
 async def finalizar_evaluacion(uid: str = Form(...), respuestas: str = Form(...)):
     lms.procesar_entrega_examen(uid, respuestas)
-    # Vista de confirmación integrada
     return templates.TemplateResponse("index.html", {"request": {}, "vista": "confirmacion"})
 
 @app.post("/configurar_lms")
@@ -216,7 +225,6 @@ async def vista_dashboard(request: Request, password: str = None):
     
     stats, incidencias, asistencia, salas, respuestas = auditoria_ia.generar_estadisticas_dashboard()
     
-    # Usamos index.html pero con vista='dashboard'
     return templates.TemplateResponse("index.html", {
         "request": request, "vista": "dashboard", "stats": stats, 
         "incidencias": incidencias, "asistencia": asistencia, 
@@ -236,5 +244,3 @@ async def descargar_dataset(password: str = None):
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
-
-
