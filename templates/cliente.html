@@ -1,63 +1,38 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <title>Evaluación UNI - FIEE</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
-    <style>
-        :root { --uni: #800000; --bg: #f4f7f6; }
-        body { font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; height: 100vh; overflow: hidden; background: var(--bg); }
-        .exam-area { flex: 2; padding: 30px; overflow-y: auto; background: white; border-right: 2px solid #ddd; }
-        .sidebar { flex: 1; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        .privacy-alert { background: #e3f2fd; color: #0d47a1; padding: 15px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; border-left: 5px solid #2196f3; }
-        video { width: 100%; border-radius: 12px; transform: scaleX(-1); background: #000; }
-        .status-badge { padding: 10px 20px; border-radius: 50px; margin-top: 15px; font-weight: bold; }
-        .status-ok { background: #d1fae5; color: #10b981; }
-        .btn-finish { background: var(--uni); color: white; padding: 15px; width: 100%; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 20px; }
-    </style>
-</head>
-<body>
-    <div class="exam-area">
-        <div class="privacy-alert">
-            🛡️ <b>Aviso de Confidencialidad:</b> Los docentes no pueden ver tu cámara en tiempo real. El sistema solo guarda capturas puntuales si se detectan anomalías para la auditoría posterior. Tu privacidad es prioridad.
-        </div>
+<div class="exam-area" style="flex:2; padding:30px; overflow-y:auto; background:white;">
+    <div style="background:#fff3cd; color:#856404; padding:10px; border-radius:5px; margin-bottom:20px; font-size:12px;">
+        🛡️ <b>Nota:</b> Tu cámara NO se transmite en vivo. Solo se capturan evidencias si el sistema detecta incidentes.
+    </div>
 
-        <h2>Examen: {{ sala }}</h2>
-        <hr>
-        
-        {% if tipo == 'imagen' %}
-            <img src="{{ contenido }}" style="width: 100%; margin-bottom: 20px;">
-            <textarea id="respuestas_texto" placeholder="Escribe tus respuestas aquí..." style="width:100%; height:200px; padding:10px;"></textarea>
-        {% else %}
-            <div id="quiz-interactivo">
-                <p>Cargando preguntas interactivas...</p>
+    {% if config.tipo == 'tradicional' %}
+        <img src="{{ config.url }}" style="width:100%; border:1px solid #ddd;">
+        <textarea id="resp_txt" style="width:100%; height:150px; margin-top:20px;" placeholder="Escribe aquí tus respuestas finales..."></textarea>
+    {% else %}
+        <div id="quiz">
+            {% for preg in config.preguntas %}
+            <div class="question" style="margin-bottom:20px; background:#f8fafc; padding:15px; border-radius:8px;">
+                <p><b>{{ loop.index }}. {{ preg.pregunta }}</b></p>
+                {% for opc in preg.opciones %}
+                <label style="display:block;"><input type="radio" name="p{{loop.index0}}" value="{{opc}}"> {{opc}}</label>
+                {% endfor %}
             </div>
-        {% endif %}
-    </div>
+            {% endfor %}
+        </div>
+    {% endif %}
 
-    <div class="sidebar">
-        <video id="video-alumno" autoplay playsinline></video>
-        <canvas id="canvas-oculto" style="display:none" width="640" height="480"></canvas>
-        <div id="estado" class="status-badge status-ok">🟢 Monitoreo Activo</div>
-        
-        <form action="/finalizar" method="post" id="form-fin" style="width:100%">
-            <input type="hidden" name="uid" value="{{ uid }}">
-            <input type="hidden" name="respuestas" id="input_respuestas">
-            <button type="submit" class="btn-finish" onclick="prepararEnvio()">🏁 FINALIZAR EXAMEN</button>
-        </form>
-        
-        <div id="lista-eventos" style="font-size:11px; margin-top:20px; width:100%"></div>
-    </div>
+    <form action="/enviar_examen" method="post" onsubmit="preparar()">
+        <input type="hidden" name="uid" value="{{ uid }}">
+        <input type="hidden" name="respuestas" id="resp_final">
+        <button type="submit" style="background:#28a745; color:white; width:100%; padding:15px; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">
+            🏁 FINALIZAR Y ENVIAR EXAMEN
+        </button>
+    </form>
+</div>
 
-    <script>
-        const DATOS_ALUMNO = { uid: "{{ uid }}", nombre: "{{ nombre }}", sala: "{{ sala }}" };
-        function prepararEnvio() {
-            const txt = document.getElementById('respuestas_texto');
-            document.getElementById('input_respuestas').value = txt ? txt.value : "Interactuado";
-        }
-    </script>
-    <script src="/static/js/motor_ia.js"></script>
-</body>
-</html>
+<script>
+    function preparar() {
+        // Esta función de JS recopila las respuestas para mandarlas a Python
+        let data = {};
+        if (document.getElementById('resp_txt')) data.texto = document.getElementById('resp_txt').value;
+        document.getElementById('resp_final').value = JSON.stringify(data);
+    }
+</script>
