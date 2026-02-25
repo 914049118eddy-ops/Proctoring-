@@ -1,5 +1,5 @@
 // ==========================================
-// MOTOR IA V6.0 - FIEE UNI (ALGORITMO LOCAL PORTADO A EDGE)
+// MOTOR IA V7.0 - FIEE UNI (GAZE RATIO & HIGH RECALL)
 // ==========================================
 const video = document.getElementById('video-alumno');
 const canvas = document.getElementById('canvas-oculto');
@@ -9,11 +9,12 @@ let enviandoAlerta = false;
 let yoloSession = null;
 let frameCounter = 0;
 
-// --- 1. PRISIÓN DIGITAL ---
+// --- PRISIÓN DIGITAL ---
 window.addEventListener('blur', () => enviarAlerta("Cambio de Pestaña (Posible Fraude)", true));
 document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('copy', e => e.preventDefault());
+document.addEventListener('paste', e => e.preventDefault());
 
-// --- 2. COMUNICACIÓN CON PYTHON ---
 function agregarEventoVisual(texto) {
     const lista = document.getElementById('lista-eventos');
     if(lista) {
@@ -49,43 +50,47 @@ async function enviarAlerta(tipo, camOk = true) {
     setTimeout(() => enviandoAlerta = false, 4000); 
 }
 
-// --- 3. ALGORITMO DE MIRADA (Extraído de tu clase DetectorMirada) ---
+// --- ALGORITMO DE MIRADA ESTRICTA (GAZE RATIO) ---
 let contMirada = 0;
-const UMBRAL_MIRADA = 10; 
+const UMBRAL_MIRADA = 5; // ~0.15s: Apenas voltee, lo detecta
 
 const faceMesh = new FaceMesh({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
 faceMesh.setOptions({maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5}); 
 
 faceMesh.onResults(async (res) => {
-    // Detección de cámara tapada (brillo)
+    // 1. Detección Cámara Tapada
     ctx.drawImage(video, 0, 0, 10, 10); 
     const data = ctx.getImageData(0, 0, 10, 10).data;
     let brillo = 0; for (let i = 0; i < data.length; i += 4) brillo += (data[i]+data[i+1]+data[i+2])/3;
     if ((brillo/100) < 15) { enviarAlerta("CÁMARA TAPADA", false); return; }
 
+    // 2. Detección de Mirada por Ratio (Invariante a la distancia)
     if (res.multiFaceLandmarks && res.multiFaceLandmarks.length > 0) {
-        const puntos = res.multiFaceLandmarks[0];
+        const p = res.multiFaceLandmarks[0];
         
-        // TU LÓGICA MATEMÁTICA EXACTA
-        const mira_izquierda = Math.abs(puntos[468].x - puntos[33].x) < 0.012;
-        const mira_derecha = Math.abs(puntos[468].x - puntos[133].x) < 0.012;
-        const mira_arriba = (puntos[159].y - puntos[468].y) > 0.018;
+        // Ojo Izquierdo: 33 (interior), 133 (exterior), 468 (iris)
+        const ancho_ojo = Math.abs(p[133].x - p[33].x);
+        const distancia_iris = Math.abs(p[468].x - p[33].x);
         
-        const desviada = mira_izquierda || mira_derecha || mira_arriba;
+        // Ratio: 0.5 es mirando al frente. < 0.35 izquierda, > 0.65 derecha.
+        const ratio = distancia_iris / ancho_ojo;
+        
+        // Hacerlo ESTRICTO: Si sale del rango [0.40 - 0.60] es trampa.
+        const desviada = ratio < 0.40 || ratio > 0.60;
 
         if (desviada) {
             contMirada++;
             if (contMirada > UMBRAL_MIRADA) {
-                enviarAlerta("Mirada Desviada (Izquierda/Derecha/Arriba)");
+                enviarAlerta(`Mirada Desviada (Ratio: ${ratio.toFixed(2)})`);
                 contMirada = 0;
             }
         } else { contMirada = 0; }
     }
 });
 
-// --- 4. ALGORITMO DE OBJETOS (YOLOv8) ---
+// --- ALGORITMO DE OBJETOS (YOLOv8 ALTA SENSIBILIDAD) ---
 let contCelular = 0;
-let contLibro = 0;
+const CONFIANZA_CELULAR = 0.28; // Extrema sensibilidad a celulares
 
 async function inferirYOLO() {
     if (!yoloSession || enviandoAlerta) return;
@@ -105,35 +110,27 @@ async function inferirYOLO() {
         const prob = output.output0.data;
         
         let celular = false;
-        let libro = false;
         
-        // Tensor de YOLOv8: Las filas de clases empiezan en el índice 4. 
-        // Celular (67) -> Fila 71. Libro (73) -> Fila 77.
+        // Recorremos el tensor buscando la clase 67 (Teléfono)
         for (let i = 0; i < 8400; i++) {
-            if (prob[71 * 8400 + i] > 0.40) celular = true; // Confianza bajada a 0.40 para webcam
-            if (prob[77 * 8400 + i] > 0.40) libro = true;
+            if (prob[71 * 8400 + i] > CONFIANZA_CELULAR) { celular = true; break; }
         }
         
         if (celular) {
             contCelular++;
-            if (contCelular >= 3) { enviarAlerta("Celular Detectado"); contCelular = 0; }
+            if (contCelular >= 2) { enviarAlerta("Celular Detectado"); contCelular = 0; }
         } else { contCelular = 0; }
-
-        if (libro) {
-            contLibro++;
-            if (contLibro >= 3) { enviarAlerta("Libro/Apuntes Detectados"); contLibro = 0; }
-        } else { contLibro = 0; }
         
     } catch(e) { console.error("Error YOLO:", e); }
 }
 
-// --- 5. ARRANQUE ASÍNCRONO ---
+// --- ARRANQUE ASÍNCRONO ---
 const camera = new Camera(video, {
     onFrame: async () => {
         try {
             await faceMesh.send({image: video});
             frameCounter++;
-            if (frameCounter % 5 === 0) await inferirYOLO(); // Analizar objetos rápido (cada ~0.15s)
+            if (frameCounter % 5 === 0) await inferirYOLO(); // Analizar rápido (cada ~0.15s)
         } catch(e) {}
     },
     width: 640, height: 480
