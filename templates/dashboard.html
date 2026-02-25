@@ -1,61 +1,23 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <title>Panel de Control UNI</title>
-    <style>
-        :root { --uni-red: #800000; --bg: #f8f9fa; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 20px; display: flex; flex-direction: column; height: 100vh; }
-        .header { display: flex; justify-content: space-between; background: white; padding: 15px 30px; border-radius: 10px; border-bottom: 4px solid var(--uni-red); margin-bottom: 20px; }
-        .main-content { display: grid; grid-template-columns: 300px 1fr; gap: 20px; flex: 1; overflow: hidden; }
-        .sidebar { background: white; padding: 20px; border-radius: 10px; overflow-y: auto; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-        .alerts-area { overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; align-content: start; }
-        .status-dot { height: 10px; width: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
-        .card { background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #eee; }
-        .card img { width: 100%; height: 150px; object-fit: cover; }
-        .btn-uni { background: var(--uni-red); color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h2 style="margin:0; color:var(--uni-red)">🏛️ FIEE - Panel de Supervisión</h2>
-        <div>
-            <a href="/descargar_reporte?password=uni2026" class="btn-uni" style="background:#28a745; text-decoration:none">Exportar</a>
-            <button class="btn-uni" onclick="location.reload()">Refrescar</button>
-        </div>
-    </div>
-
-    <div class="main-content">
-        <div class="sidebar">
-            <h3>🛠️ Gestión de Salas</h3>
-            <form action="/crear_sala" method="post" style="margin-bottom:20px;">
-                <input type="hidden" name="password" value="uni2026">
-                <input type="text" name="nombre_sala" placeholder="Nombre Sala" required style="width:70%; padding:5px;">
-                <button type="submit" class="btn-uni">+</button>
-            </form>
-
-            <h3>👥 Asistencia</h3>
-            {% for est in asistencia %}
-            <div style="padding:10px; border-bottom:1px solid #eee; font-size:13px;">
-                <span class="status-dot" style="background: {{ 'red' if est.Camara == 'BLOQUEADA' else ('gray' if est.Estado == 'FINALIZADO' else '#10b981') }}"></span>
-                <strong>{{ est.Nombre }}</strong><br>
-                <small>{{ est.Sala }} | {{ est.ID }}</small>
+<div class="sidebar">
+    <h3>📝 Configurar Examen</h3>
+    <form action="/configurar_examen" method="post" style="font-size: 12px;">
+        <input type="hidden" name="password" value="uni2026">
+        <select name="tipo" style="width:100%">
+            <option value="imagen">Imagen de Problemas</option>
+            <option value="interactivo">Cuestionario Interactivo</option>
+        </select>
+        <textarea name="contenido" placeholder="Link de imagen o JSON de preguntas" style="width:100%; margin-top:5px;"></textarea>
+        <button type="submit" class="btn-uni" style="width:100%; margin-top:5px;">Publicar Examen</button>
+    </form>
+    
+    <hr>
+    
+    <h3>📊 Resultados Recopilados</h3>
+    <div id="lista-resultados">
+        {% for res in asistencia if res.Estado == 'FINALIZADO' %}
+            <div style="padding:5px; border-bottom:1px solid #eee; font-size:12px;">
+                ✅ <strong>{{ res.Nombre }}</strong> - Entregado
             </div>
-            {% endfor %}
-        </div>
-
-        <div class="alerts-area">
-            {% for item in incidencias %}
-            <div class="card">
-                <img src="/ver_evidencia/{{ item.Ruta.split('/')[-1] }}">
-                <div style="padding:10px;">
-                    <b style="color:red; font-size:12px;">{{ item.Falta }}</b>
-                    <p style="font-size:13px; margin:5px 0;">{{ item.Nombre }}</p>
-                    <small style="color:#666;">Sala: {{ item.Sala }}</small>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
+        {% endfor %}
     </div>
-</body>
-</html>
+</div>
