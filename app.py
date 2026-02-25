@@ -46,16 +46,16 @@ class RepositorioDatos:
 # ==========================================
 # 2. CAPA DE NEGOCIO (Lógica Académica)
 # ==========================================
+# Reemplaza solo la clase SistemaLMS y la ruta /dashboard en tu app.py actual
+
 class SistemaLMS:
     """Maneja la lógica de negocio académica: Salas, Asistencia y Exámenes."""
     def __init__(self, repo: RepositorioDatos):
         self.repo = repo
         self.config_file = "examen_config.json"
-        self.default_config = {
-            "tipo": "tradicional", 
-            "url": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhLVm19tPx0AwLoM1jz5W4UkrN7e2gM8J23pk7kp7X0nliJ-SDQ79rd8s-fyoRZOmtO78ToP_lwaXCv_wXozQbcM08juHv5YzMAAePnVIk9BWG3hgGuCOeKidfyKMFTwOsyYHjf8FJwpWeF/s1600/FISICA-I-UNI-B.jpg", 
-            "preguntas": []
-        }
+        self.default_config = {"tipo": "tradicional", "url": "https://i.ibb.co/vzYp6YV/examen-fiee.jpg", "preguntas": []}
+
+    # ... (Mantén tus métodos crear_sala, validar_sala, registrar_ingreso, etc. iguales) ...
 
     def crear_sala(self, nombre_sala: str):
         registro = {"Sala": nombre_sala, "Creado": datetime.now().strftime("%Y-%m-%d %H:%M")}
@@ -76,11 +76,10 @@ class SistemaLMS:
 
     def configurar_examen(self, tipo: str, contenido: str):
         data = {"tipo": tipo, "url": "", "preguntas": []}
-        if tipo == "tradicional": 
-            data["url"] = contenido
+        if tipo == "tradicional": data["url"] = contenido
         elif tipo == "interactivo":
             try: data["preguntas"] = json.loads(contenido)
-            except: pass # Evita crash si el JSON es inválido
+            except: pass
         with open(self.config_file, "w", encoding="utf-8") as f: json.dump(data, f)
 
     def cargar_configuracion(self) -> dict:
@@ -92,6 +91,19 @@ class SistemaLMS:
         asistencia = self.repo.obtener_todos("asistencia.csv")
         incidencias = self.repo.obtener_todos("database.csv")
         salas = self.repo.obtener_todos("salas.csv")
+        respuestas_crudas = self.repo.obtener_todos("respuestas.csv")
+        
+        # Procesamos las respuestas JSON a diccionarios de Python para la plantilla HTML
+        respuestas_formateadas = []
+        for r in respuestas_crudas:
+            try:
+                res_dict = json.loads(r['Respuestas'])
+                # Mapeamos para que se vea ordenado
+                r['Detalle'] = res_dict
+                respuestas_formateadas.append(r)
+            except:
+                r['Detalle'] = {"Error": "No se pudo decodificar"}
+                respuestas_formateadas.append(r)
         
         stats = {
             "total": len(asistencia),
@@ -99,7 +111,20 @@ class SistemaLMS:
             "bloqueados": sum(1 for a in asistencia if a["Camara"] == "BLOQUEADA"),
             "alertas": len(incidencias)
         }
-        return stats, incidencias, asistencia, salas
+        return stats, incidencias, asistencia, salas, respuestas_formateadas
+
+# ----- EN LA SECCIÓN DE RUTAS HTTP -----
+@app.get("/dashboard", response_class=HTMLResponse)
+async def admin_dashboard(request: Request, password: str = None):
+    if password != CLAVE_DOCENTE: return RedirectResponse("/")
+    
+    stats, incidencias, asistencia, salas, respuestas = sistema_lms.obtener_estadisticas()
+    
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request, "stats": stats, "incidencias": incidencias[::-1], 
+        "asistencia": asistencia[::-1], "salas": salas, "password": password,
+        "respuestas": respuestas[::-1] # Pasamos las respuestas ordenadas de la más reciente a la antigua
+    })
 
 # ==========================================
 # 3. CAPA DE NEGOCIO (Proctoring e IA)
@@ -225,3 +250,4 @@ async def reporte(password: str = None):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run("app:app", host="0.0.0.0", port=port)
+
