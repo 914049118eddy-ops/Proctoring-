@@ -6,60 +6,98 @@
     <style>
         :root { --uni: #800000; --bg: #f4f7f6; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 20px; }
-        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid var(--uni); padding-bottom: 10px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid var(--uni); padding-bottom: 10px; margin-bottom: 20px; }
         
-        /* Dashboard Stats */
-        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin: 20px 0; }
-        .stat-card { background: white; padding: 20px; border-radius: 10px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-top: 4px solid var(--uni); }
-        .stat-card h2 { margin: 0; color: var(--uni); font-size: 24px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
+        .stat-card { background: white; padding: 15px; border-radius: 8px; text-align: center; border-top: 4px solid var(--uni); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .stat-card h2 { margin: 0; color: var(--uni); font-size: 28px; }
+        .stat-card p { margin: 5px 0 0 0; font-size: 13px; color: #666; font-weight: bold; }
         
-        .main-layout { display: grid; grid-template-columns: 300px 1fr; gap: 20px; height: 60vh; }
-        .scrollable { background: white; border-radius: 10px; padding: 15px; overflow-y: auto; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        .alerts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; }
-        .card-alert { background: white; border-radius: 8px; overflow: hidden; border: 1px solid #eee; font-size: 12px; }
-        .card-alert img { width: 100%; height: 120px; object-fit: cover; }
+        .main-layout { display: grid; grid-template-columns: 350px 1fr; gap: 20px; height: calc(100vh - 180px); }
+        .panel { background: white; border-radius: 10px; padding: 20px; overflow-y: auto; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        
+        .btn { background: var(--uni); color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; box-sizing: border-box; }
+        .btn-green { background: #28a745; }
+        input, select, textarea { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-family: inherit; }
+        
+        .alert-card { border: 1px solid #fee2e2; border-radius: 8px; overflow: hidden; margin-bottom: 15px; display: flex; background: #fff; }
+        .alert-card img { width: 120px; height: 90px; object-fit: cover; }
+        .alert-info { padding: 10px; flex: 1; }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1 style="color: var(--uni); margin: 0;">🏛️ Supervisión Docente</h1>
-        <button onclick="location.reload()" style="background:var(--uni); color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer;">🔄 Refrescar Panel</button>
+        <h1 style="color: var(--uni); margin: 0;">🏛️ Gestión Académica FIEE</h1>
+        <div style="display: flex; gap: 10px;">
+            <button onclick="location.reload()" class="btn" style="width: auto;">🔄 Actualizar</button>
+        </div>
     </div>
 
     <div class="stats-grid">
-        <div class="stat-card"><h2>{{ stats.total_alumnos }}</h2><p>Inscritos</p></div>
-        <div class="stat-card"><h2>{{ stats.online }}</h2><p>En Línea 🟢</p></div>
-        <div class="stat-card"><h2>{{ stats.alertas_criticas }}</h2><p>Incidentes 🚨</p></div>
-        <div class="stat-card"><h2 style="color:{{ 'red' if stats.alumnos_bloqueados > 0 else 'green' }}">{{ stats.alumnos_bloqueados }}</h2><p>Cámaras Obstruidas ⛔</p></div>
+        <div class="stat-card"><h2>{{ stats.total }}</h2><p>REGISTRADOS</p></div>
+        <div class="stat-card"><h2>{{ stats.online }}</h2><p>RINDIENDO EXAMEN 🟢</p></div>
+        <div class="stat-card"><h2>{{ stats.alertas }}</h2><p>INCIDENTES 🚨</p></div>
+        <div class="stat-card"><h2 style="color:{{ 'red' if stats.bloqueados > 0 else 'green' }}">{{ stats.bloqueados }}</h2><p>CÁMARAS TAPADAS ⛔</p></div>
     </div>
 
     <div class="main-layout">
-        <div class="scrollable">
-            <h3>👥 Lista de Alumnos</h3>
-            {% for est in asistencia %}
-            <div style="padding:8px; border-bottom:1px solid #eee; font-size:13px;">
-                <span style="color:{{ 'red' if est.Camara == 'BLOQUEADA' else '#10b981' }}">●</span> 
-                <b>{{ est.Nombre }}</b><br>
-                <small>{{ est.ID }} - {{ est.Estado }}</small>
+        <div class="panel">
+            <h3 style="margin-top:0; color:var(--uni); border-bottom: 1px solid #eee; padding-bottom:5px;">1. Crear Sala</h3>
+            <form action="/crear_sala" method="post">
+                <input type="hidden" name="password" value="{{ password }}">
+                <input type="text" name="nombre_sala" placeholder="Ej: EXAMEN_FINAL_POO" required>
+                <button type="submit" class="btn">Abrir Sala</button>
+            </form>
+
+            <h3 style="margin-top:30px; color:var(--uni); border-bottom: 1px solid #eee; padding-bottom:5px;">2. Configurar Examen</h3>
+            <form action="/configurar_examen" method="post">
+                <input type="hidden" name="password" value="{{ password }}">
+                <select name="tipo">
+                    <option value="tradicional">Modo: Imagen / PDF</option>
+                    <option value="interactivo">Modo: Test Interactivo</option>
+                </select>
+                <textarea name="contenido" rows="5" placeholder="Pega el link de la imagen o el código JSON del examen..." required></textarea>
+                <button type="submit" class="btn btn-green">Publicar Contenido</button>
+            </form>
+            <div style="background:#f8fafc; padding:10px; border-radius:5px; font-size:11px; margin-top:10px; font-family:monospace;">
+                <b>Ejemplo JSON Interactivo:</b><br>
+                [<br>
+                  {"pregunta": "¿Qué es POO?", "opciones": ["Clase", "Objeto", "Ambas"]},<br>
+                  {"pregunta": "¿2+2?", "opciones": ["3", "4", "5"]}<br>
+                ]
             </div>
-            {% endfor %}
         </div>
 
-        <div class="scrollable">
-            <h3>🚨 Evidencias Capturadas</h3>
-            <div class="alerts-grid">
-                {% for item in incidencias %}
-                <div class="card-alert">
-                    <img src="/ver_evidencia/{{ item.Ruta.split('/')[-1] }}">
-                    <div style="padding:10px;">
-                        <b style="color:red;">{{ item.Falta }}</b><br>
-                        {{ item.Nombre }}<br>
-                        <small>{{ item.Fecha }}</small>
+        <div class="panel">
+            <h3 style="margin-top:0; color:var(--uni); border-bottom: 1px solid #eee; padding-bottom:5px;">👁️ Monitoreo en Tiempo Real</h3>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div>
+                    <h4>Estado de Alumnos</h4>
+                    {% for est in asistencia %}
+                    <div style="padding:8px; border:1px solid #eee; border-radius:5px; margin-bottom:5px; font-size:12px; background: {{ '#fff' if est.Estado == 'EN EXAMEN' else '#f8fafc' }}">
+                        <span style="color:{{ 'red' if est.Camara == 'BLOQUEADA' else ('#10b981' if est.Estado == 'EN EXAMEN' else 'gray') }}">●</span> 
+                        <b>{{ est.Nombre }}</b> ({{ est.ID }})<br>
+                        <span style="color:#666">Sala: {{ est.Sala }} | {{ est.Estado }}</span>
                     </div>
+                    {% endfor %}
                 </div>
-                {% else %}
-                <p style="color:#999; text-align:center; width:100%;">No se han registrado incidencias.</p>
-                {% endfor %}
+
+                <div>
+                    <h4>Evidencias de IA</h4>
+                    {% for item in incidencias %}
+                    <div class="alert-card">
+                        <img src="/ver_evidencia/{{ item.Ruta.split('/')[-1] }}">
+                        <div class="alert-info">
+                            <b style="color:#ef4444;">{{ item.Falta }}</b><br>
+                            <b>{{ item.Nombre }}</b><br>
+                            <span style="color:#666">{{ item.Fecha }}</span>
+                        </div>
+                    </div>
+                    {% else %}
+                    <p style="color:#999; font-size:13px; text-align:center;">El examen transcurre con normalidad.</p>
+                    {% endfor %}
+                </div>
             </div>
         </div>
     </div>
