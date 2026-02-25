@@ -23,6 +23,8 @@
         .alert-card { border: 1px solid #fee2e2; border-radius: 8px; overflow: hidden; margin-bottom: 15px; display: flex; background: #fff; }
         .alert-card img { width: 120px; height: 90px; object-fit: cover; }
         .alert-info { padding: 10px; flex: 1; }
+        
+        .respuesta-card { background: #f8fafc; border-left: 4px solid #10b981; padding: 15px; border-radius: 5px; margin-bottom: 15px; }
     </style>
 </head>
 <body>
@@ -59,32 +61,14 @@
                 <textarea name="contenido" rows="5" placeholder="Pega el link de la imagen o el código JSON del examen..." required></textarea>
                 <button type="submit" class="btn btn-green">Publicar Contenido</button>
             </form>
-            <div style="background:#f8fafc; padding:10px; border-radius:5px; font-size:11px; margin-top:10px; font-family:monospace;">
-                <b>Ejemplo JSON Interactivo:</b><br>
-                [<br>
-                  {"pregunta": "¿Qué es POO?", "opciones": ["Clase", "Objeto", "Ambas"]},<br>
-                  {"pregunta": "¿2+2?", "opciones": ["3", "4", "5"]}<br>
-                ]
-            </div>
         </div>
 
         <div class="panel">
-            <h3 style="margin-top:0; color:var(--uni); border-bottom: 1px solid #eee; padding-bottom:5px;">👁️ Monitoreo en Tiempo Real</h3>
+            <h3 style="margin-top:0; color:var(--uni); border-bottom: 1px solid #eee; padding-bottom:5px;">👁️ Resultados y Monitoreo</h3>
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                 <div>
-                    <h4>Estado de Alumnos</h4>
-                    {% for est in asistencia %}
-                    <div style="padding:8px; border:1px solid #eee; border-radius:5px; margin-bottom:5px; font-size:12px; background: {{ '#fff' if est.Estado == 'EN EXAMEN' else '#f8fafc' }}">
-                        <span style="color:{{ 'red' if est.Camara == 'BLOQUEADA' else ('#10b981' if est.Estado == 'EN EXAMEN' else 'gray') }}">●</span> 
-                        <b>{{ est.Nombre }}</b> ({{ est.ID }})<br>
-                        <span style="color:#666">Sala: {{ est.Sala }} | {{ est.Estado }}</span>
-                    </div>
-                    {% endfor %}
-                </div>
-
-                <div>
-                    <h4>Evidencias de IA</h4>
+                    <h4>🚨 Evidencias de IA</h4>
                     {% for item in incidencias %}
                     <div class="alert-card">
                         <img src="/ver_evidencia/{{ item.Ruta.split('/')[-1] }}">
@@ -95,7 +79,26 @@
                         </div>
                     </div>
                     {% else %}
-                    <p style="color:#999; font-size:13px; text-align:center;">El examen transcurre con normalidad.</p>
+                    <p style="color:#999; font-size:13px;">El examen transcurre con normalidad.</p>
+                    {% endfor %}
+                </div>
+
+                <div>
+                    <h4>📑 Respuestas Entregadas</h4>
+                    {% for res in respuestas %}
+                    <div class="respuesta-card">
+                        <b>ID Alumno:</b> {{ res.ID }}<br>
+                        <span style="font-size: 11px; color: #666;">Entregado a las: {{ res.Fecha }}</span>
+                        <hr style="border:0; border-top:1px solid #ddd; margin: 8px 0;">
+                        
+                        <div style="font-size: 13px;">
+                            {% for pregunta, respuesta in res.Detalle.items() %}
+                                <b>{{ pregunta }}:</b> {{ respuesta }}<br>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% else %}
+                    <p style="color:#999; font-size:13px;">Aún no hay exámenes entregados.</p>
                     {% endfor %}
                 </div>
             </div>
