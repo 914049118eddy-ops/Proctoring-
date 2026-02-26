@@ -20,26 +20,24 @@ class RepositorioDatosFIEE:
             "respuestas": "respuestas.csv",
             "salas": "salas.csv"
         }
-        self.columnas = {
-            "db": ["Fecha", "ID", "Nombre", "Sala", "Falta", "Ruta"],
-            "asistencia": ["ID", "Nombre", "Sala", "Estado", "Camara", "Inicio"],
-            "respuestas": ["ID", "Respuestas", "Fecha"],
-            "salas": ["Sala", "Creado", "Docente"]
-        }
         self._inicializar_entorno()
 
     def _inicializar_entorno(self) -> None:
+        """Configura el entorno de directorios y bases de datos iniciales."""
         for directorio in ["evidencias", "static/js"]: 
             os.makedirs(directorio, exist_ok=True)
             
-        for clave, ruta in self.archivos.items():
-            self._crear_csv_si_no_existe(ruta, self.columnas[clave])
+        self._crear_csv_si_no_existe(self.archivos["db"], ["Fecha", "ID", "Nombre", "Sala", "Falta", "Ruta"])
+        self._crear_csv_si_no_existe(self.archivos["asistencia"], ["ID", "Nombre", "Sala", "Estado", "Camara", "Inicio"])
+        self._crear_csv_si_no_existe(self.archivos["respuestas"], ["ID", "Respuestas", "Fecha"])
+        self._crear_csv_si_no_existe(self.archivos["salas"], ["Sala", "Creado"])
 
     def _crear_csv_si_no_existe(self, ruta: str, columnas: List[str]) -> None:
         if not os.path.exists(ruta) or os.stat(ruta).st_size == 0:
             pd.DataFrame(columns=columnas).to_csv(ruta, index=False)
 
     def guardar_registro(self, clave_archivo: str, registro: Dict[str, Any]) -> None:
+        """Guarda un registro de forma concurrente y segura."""
         with self.lock:
             ruta = self.archivos[clave_archivo]
             pd.DataFrame([registro]).to_csv(ruta, mode='a', header=False, index=False)
@@ -56,16 +54,11 @@ class RepositorioDatosFIEE:
         if not os.path.exists(ruta): return []
         return pd.read_csv(ruta).to_dict(orient="records")
 
-    def limpiar_archivo(self, clave_archivo: str) -> None:
-        """Vacia el contenido de un CSV manteniendo sus cabeceras."""
-        with self.lock:
-            ruta = self.archivos[clave_archivo]
-            pd.DataFrame(columns=self.columnas[clave_archivo]).to_csv(ruta, index=False)
-
 # ==========================================
 # 2. CAPA DE NEGOCIO Y LÓGICA ACADÉMICA
 # ==========================================
 class GestorAcademicoLMS:
+    """Implementa las reglas de negocio de la Universidad."""
     def __init__(self, repositorio: RepositorioDatosFIEE):
         self.repo = repositorio
         self.archivo_config = "examen_config.json"
@@ -75,13 +68,16 @@ class GestorAcademicoLMS:
             "preguntas": []
         }
 
-    def registrar_nueva_sala(self, nombre_sala: str, nombre_docente: str) -> None:
-        if not nombre_sala or nombre_sala.strip() == "": return
-        registro = {"Sala": nombre_sala.upper(), "Creado": datetime.now().strftime("%Y-%m-%d %H:%M"), "Docente": nombre_docente}
+    def registrar_nueva_sala(self, nombre_sala: str) -> None:
+        # Validación para no crear salas vacías
+        if not nombre_sala or nombre_sala.strip() == "":
+            return
+        registro = {"Sala": nombre_sala.upper(), "Creado": datetime.now().strftime("%Y-%m-%d %H:%M")}
         self.repo.guardar_registro("salas", registro)
 
     def verificar_existencia_sala(self, sala: str) -> bool:
         salas = self.repo.obtener_datos("salas")
+        # Comparación robusta
         return any(s['Sala'].strip().upper() == sala.strip().upper() for s in salas)
 
     def matricular_alumno_examen(self, uid: str, nombre: str, sala: str) -> None:
@@ -95,21 +91,25 @@ class GestorAcademicoLMS:
 
     def guardar_configuracion_docente(self, tipo: str, contenido: str) -> None:
         configuracion = {"tipo": tipo, "url": "", "preguntas": []}
-        if tipo == "tradicional": configuracion["url"] = contenido
+        if tipo == "tradicional": 
+            configuracion["url"] = contenido
         elif tipo == "interactivo":
             try: configuracion["preguntas"] = json.loads(contenido)
-            except ValueError: pass
-        with open(self.archivo_config, "w", encoding="utf-8") as f: json.dump(configuracion, f)
+            except ValueError: print("Error: JSON de preguntas inválido.")
+        with open(self.archivo_config, "w", encoding="utf-8") as f: 
+            json.dump(configuracion, f)
 
     def obtener_configuracion_actual(self) -> Dict[str, Any]:
         try:
             with open(self.archivo_config, "r", encoding="utf-8") as f: return json.load(f)
-        except Exception: return self.config_base
+        except Exception: 
+            return self.config_base
 
 # ==========================================
 # 3. CAPA DE ANÁLISIS E INTELIGENCIA
 # ==========================================
 class AnalizadorProctoring:
+    """Procesa auditorías, estadísticas y evidencias de IA."""
     def __init__(self, repositorio: RepositorioDatosFIEE):
         self.repo = repositorio
 
@@ -120,7 +120,8 @@ class AnalizadorProctoring:
         try:
             with open(ruta_imagen, "wb") as f:
                 f.write(base64.b64decode(img_b64.split(",")[1]))
-        except Exception as error_io: print(f"Error IO: {error_io}")
+        except Exception as error_io:
+            print(f"Error de E/S al guardar evidencia: {error_io}")
 
         if not camara_activa:
             self.repo.actualizar_estado("asistencia", uid, "Camara", "BLOQUEADA")
@@ -139,8 +140,10 @@ class AnalizadorProctoring:
         
         respuestas_procesadas = []
         for r in respuestas_crudas:
-            try: r['Detalle'] = json.loads(r['Respuestas'])
-            except: r['Detalle'] = {"Formato": "Datos no procesables"}
+            try:
+                r['Detalle'] = json.loads(r['Respuestas'])
+            except:
+                r['Detalle'] = {"Formato": "Datos no procesables"}
             respuestas_procesadas.append(r)
         
         estadisticas = {
@@ -149,16 +152,8 @@ class AnalizadorProctoring:
             "camaras_tapadas": sum(1 for a in asistencia if a["Camara"] == "BLOQUEADA"),
             "total_alertas": len(incidencias)
         }
+        
         return estadisticas, incidencias[::-1], asistencia[::-1], salas, respuestas_procesadas[::-1]
-
-    def purgar_evidencias(self) -> None:
-        """Borra las fotos físicamente y limpia el CSV de incidencias."""
-        self.repo.limpiar_archivo("db")
-        carpeta = "evidencias"
-        for archivo in os.listdir(carpeta):
-            if archivo.endswith(".jpg"):
-                try: os.remove(os.path.join(carpeta, archivo))
-                except Exception as e: print(f"No se pudo borrar {archivo}: {e}")
 
 # ==========================================
 # INICIALIZACIÓN DEL SISTEMA
@@ -185,11 +180,10 @@ async def pagina_inicio(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "vista": "registro"})
 
 @app.post("/procesar_acceso")
-async def procesar_acceso(role: str = Form(...), nombre: str = Form(None), uid: str = Form(None), sala: str = Form(None), password: str = Form(None), docente: str = Form(None)):
+async def procesar_acceso(role: str = Form(...), nombre: str = Form(None), uid: str = Form(None), sala: str = Form(None), password: str = Form(None)):
     if role == "docente":
         if password == CLAVE_INSTITUCIONAL:
-            # Ahora pasamos el nombre del docente en la URL para la sesión
-            return RedirectResponse(url=f"/dashboard?password={password}&docente={docente}", status_code=303)
+            return RedirectResponse(url=f"/dashboard?password={password}", status_code=303)
         return HTMLResponse("<h1>❌ Credenciales Docentes Incorrectas</h1><a href='/'>Volver</a>", status_code=403)
     
     if not lms.verificar_existencia_sala(sala):
@@ -198,17 +192,20 @@ async def procesar_acceso(role: str = Form(...), nombre: str = Form(None), uid: 
     lms.matricular_alumno_examen(uid, nombre, sala)
     return RedirectResponse(url=f"/examen?uid={uid}&nombre={nombre}&sala={sala}", status_code=303)
 
+# ---> AQUÍ ESTÁ LA RUTA QUE FALTABA <---
 @app.post("/crear_sala")
-async def crear_sala_nueva(nombre_sala: str = Form(...), password: str = Form(...), docente: str = Form(...)):
+async def crear_sala_nueva(nombre_sala: str = Form(...), password: str = Form(...)):
+    """Endpoint para que el profesor registre nuevas salas de examen."""
     if password == CLAVE_INSTITUCIONAL:
-        lms.registrar_nueva_sala(nombre_sala, docente)
-    return RedirectResponse(url=f"/dashboard?password={password}&docente={docente}", status_code=303)
+        lms.registrar_nueva_sala(nombre_sala)
+    return RedirectResponse(url=f"/dashboard?password={password}", status_code=303)
 
 @app.get("/examen", response_class=HTMLResponse)
 async def vista_examen(request: Request, uid: str, nombre: str, sala: str):
     config_actual = lms.obtener_configuracion_actual()
     return templates.TemplateResponse("index.html", {
-        "request": request, "vista": "examen", "uid": uid, "nombre": nombre, "sala": sala, "config": config_actual
+        "request": request, "vista": "examen", 
+        "uid": uid, "nombre": nombre, "sala": sala, "config": config_actual
     })
 
 @app.post("/finalizar_evaluacion")
@@ -217,33 +214,27 @@ async def finalizar_evaluacion(uid: str = Form(...), respuestas: str = Form(...)
     return templates.TemplateResponse("index.html", {"request": {}, "vista": "confirmacion"})
 
 @app.post("/configurar_lms")
-async def configurar_lms(tipo: str = Form(...), contenido: str = Form(...), password: str = Form(...), docente: str = Form(...)):
+async def configurar_lms(tipo: str = Form(...), contenido: str = Form(...), password: str = Form(...)):
     if password == CLAVE_INSTITUCIONAL: 
         lms.guardar_configuracion_docente(tipo, contenido)
-    return RedirectResponse(url=f"/dashboard?password={password}&docente={docente}", status_code=303)
-
-@app.post("/limpiar_auditoria")
-async def limpiar_auditoria(password: str = Form(...), docente: str = Form(...)):
-    """Nuevo endpoint para borrar todas las evidencias visuales y limpiar la base de datos."""
-    if password == CLAVE_INSTITUCIONAL:
-        auditoria_ia.purgar_evidencias()
-    return RedirectResponse(url=f"/dashboard?password={password}&docente={docente}", status_code=303)
+    return RedirectResponse(url=f"/dashboard?password={password}", status_code=303)
 
 @app.get("/dashboard", response_class=HTMLResponse)
-async def vista_dashboard(request: Request, password: str = None, docente: str = "Docente"):
+async def vista_dashboard(request: Request, password: str = None):
     if password != CLAVE_INSTITUCIONAL: return RedirectResponse("/")
+    
     stats, incidencias, asistencia, salas, respuestas = auditoria_ia.generar_estadisticas_dashboard()
     
     return templates.TemplateResponse("index.html", {
-        "request": request, "vista": "dashboard", "stats": stats, "incidencias": incidencias, 
-        "asistencia": asistencia, "salas": salas, "respuestas": respuestas, 
-        "password": password, "docente": docente
+        "request": request, "vista": "dashboard", "stats": stats, 
+        "incidencias": incidencias, "asistencia": asistencia, 
+        "salas": salas, "respuestas": respuestas, "password": password
     })
 
 @app.post("/api/alerta_ia")
 async def procesar_tensor_ia(alerta: ModeloTensorIA, bt: BackgroundTasks):
     bt.add_task(auditoria_ia.registrar_infraccion_ia, alerta.uid, alerta.nombre, alerta.sala, alerta.tipo_falta, alerta.imagen_b64, alerta.camara_ok)
-    return {"estado": "Procesado"}
+    return {"estado": "Procesado correctamente por el Backend"}
 
 @app.get("/descargar_dataset")
 async def descargar_dataset(password: str = None):
@@ -253,3 +244,4 @@ async def descargar_dataset(password: str = None):
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
+
