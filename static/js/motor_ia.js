@@ -145,26 +145,24 @@ async function inferirYOLO() {
             const w = prob[2 * 8400 + mejor_caja_idx];
             const h = prob[3 * 8400 + mejor_caja_idx];
             
-            // Escalamos de la red 640x640 a las dimensiones reales del video en el DOM
             const escalaX = overlayCanvas.width / 640;
             const escalaY = overlayCanvas.height / 640;
-            
-            const x_pixel = (cx - w/2) * escalaX;
-            const y_pixel = (cy - h/2) * escalaY;
-            const w_pixel = w * escalaX;
-            const h_pixel = h * escalaY;
+    
+            const x_pixel = (cx - w / 2) * escalaX;
+            const y_pixel = (cy - h / 2) * escalaY;
+    
+            ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
-            // DIBUJAMOS LA BOUNDING BOX
-            ctxOverlay.strokeStyle = "#ef4444";
-            ctxOverlay.lineWidth = 3;
-            ctxOverlay.strokeRect(x_pixel, y_pixel, w_pixel, h_pixel);
-            
-            // DIBUJAMOS LA ETIQUETA
-            ctxOverlay.fillStyle = "#ef4444";
-            ctxOverlay.fillRect(x_pixel, y_pixel - 25, 180, 25);
-            ctxOverlay.fillStyle = "white";
-            ctxOverlay.font = "bold 14px Arial";
-            ctxOverlay.fillText(`${objeto_detectado} ${(max_confianza*100).toFixed(0)}%`, x_pixel + 5, y_pixel - 8);
+           // Estilo UNI: Granate y Blanco
+        ctxOverlay.strokeStyle = "#800000"; 
+        ctxOverlay.setLineDash([5, 5]); // Línea punteada para un look más "tecnológico"
+        ctxOverlay.lineWidth = 2;
+        ctxOverlay.strokeRect(x_pixel, y_pixel, w * escalaX, h * escalaY);
+        
+        ctxOverlay.fillStyle = "#800000";
+        ctxOverlay.fillRect(x_pixel, y_pixel - 20, 100, 20);
+        ctxOverlay.fillStyle = "white";
+        ctxOverlay.fillText(`${objeto_detectado}`, x_pixel + 5, y_pixel - 5);
 
             // Contador de infracción
             contCelular++;
