@@ -6,6 +6,7 @@ import pandas as pd
 import json
 import hashlib
 import logging
+import csv
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Tuple, Any, Optional
@@ -113,20 +114,29 @@ class ContextoDatos:
                 pd.DataFrame(columns=meta["cols"]).to_csv(ruta, index=False)
 
     def insertar(self, entidad: str, datos: Dict[str, Any]) -> None:
+        """Inserción directa por flujo de archivos para mayor eficiencia."""
         with self.lock:
             ruta = self.estructura[entidad]["archivo"]
-            pd.DataFrame([datos]).to_csv(ruta, mode='a', header=False, index=False)
+            columnas = self.estructura[entidad]["cols"]
+            file_exists = os.path.isfile(ruta)
+            
+            with open(ruta, mode='a', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=columnas)
+                # No necesitamos escribir cabecera aquí si ya se hizo en _auditar_entorno
+                writer.writerow(datos)
 
+    # El método actualizar_campo sigue usando pandas por la complejidad de edición de filas
     def actualizar_campo(self, entidad: str, clave_primaria: str, campo: str, valor: Any) -> None:
         with self.lock:
             ruta = self.estructura[entidad]["archivo"]
             try:
                 df = pd.read_csv(ruta)
-                if "ID" in df.columns and campo in df.columns:
-                    df.loc[df['ID'] == clave_primaria, campo] = valor
-                    df.to_csv(ruta, index=False)
+                # Normalización de tipos para comparación segura
+                df['ID'] = df['ID'].astype(str)
+                df.loc[df['ID'] == str(clave_primaria), campo] = valor
+                df.to_csv(ruta, index=False)
             except Exception as e:
-                logger.error(f"Error en actualización de fila: {e}")
+                logger.error(f"Fallo en actualización atómica: {e}")
 
     def recuperar_todos(self, entidad: str) -> List[Dict[str, Any]]:
         ruta = self.estructura[entidad]["archivo"]
@@ -396,3 +406,4 @@ async def endpoint_descarga(request: Request):
 if __name__ == "__main__":
     puerto = int(os.environ.get("PORT", 8000))
     uvicorn.run("app:app", host="0.0.0.0", port=puerto)
+
