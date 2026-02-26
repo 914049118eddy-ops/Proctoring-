@@ -7,12 +7,10 @@
         :root { --uni: #800000; --bg: #f4f7f6; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; }
         
-        /* Estilos Generales */
         .btn { background: var(--uni); color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; box-sizing: border-box; }
         .btn:hover { background: #600000; }
         input, select, textarea { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
         
-        /* Estilos de Registro */
         .registro-container { display: flex; justify-content: center; align-items: center; height: 100vh; }
         .card-login { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 360px; border-top: 6px solid var(--uni); }
         .tabs { display: flex; border-bottom: 1px solid #ddd; margin-bottom: 20px; }
@@ -21,7 +19,6 @@
         .form-view { display: none; }
         .form-view.active { display: block; }
         
-        /* Estilos de Examen */
         .examen-layout { display: flex; height: 100vh; overflow: hidden; width: 100vw; }
         .examen-area { flex: 2; padding: 30px; overflow-y: auto; background: white; border-right: 2px solid #ddd; }
         .proctoring-sidebar { flex: 1; padding: 20px; display: flex; flex-direction: column; align-items: center; background: #fff; }
@@ -30,9 +27,8 @@
         .log-box { width: 100%; margin-top: 15px; height: 150px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 10px; font-size: 12px; box-sizing: border-box; }
         .pregunta-card { background: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
 
-        /* Estilos Dashboard */
-        .dash-body { padding: 20px; overflow-y: auto; }
-        .header { display: flex; justify-content: space-between; border-bottom: 3px solid var(--uni); padding-bottom: 10px; margin-bottom: 20px; }
+        .dash-body { padding: 20px; overflow-y: auto; height: 100vh; box-sizing: border-box;}
+        .header { display: flex; justify-content: space-between; border-bottom: 3px solid var(--uni); padding-bottom: 10px; margin-bottom: 20px; align-items: center;}
         .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
         .stat-card { background: white; padding: 15px; border-radius: 8px; text-align: center; border-top: 4px solid var(--uni); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
         .stat-card h2 { margin: 0; color: var(--uni); font-size: 28px; }
@@ -63,6 +59,7 @@
             
             <form id="form-doc" class="form-view" action="/procesar_acceso" method="post">
                 <input type="hidden" name="role" value="docente">
+                <input type="text" name="docente" placeholder="Tu Nombre (Ej: Ing. Pérez)" required>
                 <input type="password" name="password" placeholder="Contraseña Institucional" required>
                 <button type="submit" class="btn" style="background:#333;">Acceso Docente</button>
             </form>
@@ -80,15 +77,11 @@
 
 
     {% if vista == 'examen' %}
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
-    
     <div class="examen-layout">
         <div class="examen-area">
             <h2 style="color: var(--uni);">Sala de Evaluación: {{ sala }}</h2>
             <div style="background:#e3f2fd; padding:10px; border-radius:5px; font-size:12px; margin-bottom:15px;">
-                🛡️ La cámara se procesa localmente en tu dispositivo. Tu privacidad está garantizada.
+                🛡️ La cámara se procesa localmente. Tu privacidad está garantizada.
             </div>
 
             {% if config.tipo == 'tradicional' %}
@@ -117,16 +110,16 @@
             
             <video id="video-alumno" autoplay playsinline></video>
             <canvas id="canvas-oculto" style="display:none" width="640" height="480"></canvas>
-            <div id="estado" class="status-badge" style="color:#f59e0b; border-color:#f59e0b;">⏳ Iniciando Motor IA...</div>
+            <div id="estado" class="status-badge" style="color:#f59e0b; border-color:#f59e0b;">⏳ Iniciando IA...</div>
             
             <form action="/finalizar_evaluacion" method="post" style="width: 100%;" onsubmit="recopilarRespuestas()">
                 <input type="hidden" name="uid" value="{{ uid }}">
                 <input type="hidden" name="respuestas" id="input_respuestas">
-                <button type="submit" class="btn" style="background:#10b981; margin-top:15px;">🏁 ENVIAR EXAMEN</button>
+                <button type="submit" class="btn" style="background:#10b981; margin-top:15px;">🏁 ENTREGAR EXAMEN</button>
             </form>
 
             <div class="log-box">
-                <b style="color:#666;">Bitácora de Auditoría</b><hr style="border:0; border-top:1px solid #eee;">
+                <b style="color:#666;">Bitácora de IA</b><hr style="border:0; border-top:1px solid #eee;">
                 <div id="lista-eventos"></div>
             </div>
         </div>
@@ -146,6 +139,9 @@
             document.getElementById('input_respuestas').value = JSON.stringify(data);
         }
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
     <script src="/static/js/motor_ia.js"></script>
     {% endif %}
 
@@ -153,15 +149,24 @@
     {% if vista == 'dashboard' %}
     <div class="dash-body">
         <div class="header">
-            <h1 style="color: var(--uni); margin: 0;">👨‍🏫 Panel Docente FIEE</h1>
+            <div>
+                <h1 style="color: var(--uni); margin: 0;">👨‍🏫 Panel de Control</h1>
+                <small style="color:#666;">Sesión iniciada por: <b>{{ docente }}</b></small>
+            </div>
             <div style="display:flex; gap:10px;">
                 <button class="btn" onclick="location.reload()" style="width:auto;">🔄 Refrescar</button>
-                <a href="/descargar_dataset?password={{ password }}" class="btn" style="background:#10b981; text-decoration:none; width:auto;">📥 Descargar Auditoría</a>
+                <a href="/descargar_dataset?password={{ password }}" class="btn" style="background:#10b981; text-decoration:none; width:auto; text-align:center;">📥 CSV</a>
+                
+                <form action="/limpiar_auditoria" method="post" onsubmit="return confirm('¿Seguro que deseas borrar todas las fotos e incidencias?');">
+                    <input type="hidden" name="password" value="{{ password }}">
+                    <input type="hidden" name="docente" value="{{ docente }}">
+                    <button type="submit" class="btn" style="background:#ef4444; width:auto;">🗑️ Limpiar Evidencias</button>
+                </form>
             </div>
         </div>
 
         <div class="stats-grid">
-            <div class="stat-card"><h2>{{ stats.total_alumnos }}</h2><p>MATRICULADOS</p></div>
+            <div class="stat-card"><h2>{{ stats.total_alumnos }}</h2><p>ALUMNOS</p></div>
             <div class="stat-card"><h2>{{ stats.activos }}</h2><p>RINDIENDO 🟢</p></div>
             <div class="stat-card"><h2>{{ stats.total_alertas }}</h2><p>INCIDENTES 🚨</p></div>
             <div class="stat-card"><h2 style="color:{{ 'red' if stats.camaras_tapadas > 0 else 'green' }}">{{ stats.camaras_tapadas }}</h2><p>CÁMARAS TAPADAS ⛔</p></div>
@@ -169,16 +174,18 @@
 
         <div class="dash-layout">
             <div class="panel">
-                <h3 style="margin-top:0; color:var(--uni); border-bottom: 1px solid #eee;">1. Gestión de Salas</h3>
+                <h3 style="margin-top:0; color:var(--uni); border-bottom: 1px solid #eee;">1. Crear Sala</h3>
                 <form action="/crear_sala" method="post" style="display:flex; gap:5px;">
                     <input type="hidden" name="password" value="{{ password }}">
+                    <input type="hidden" name="docente" value="{{ docente }}">
                     <input type="text" name="nombre_sala" placeholder="Ej: EXAMEN_POO" required>
                     <button type="submit" class="btn" style="width:80px;">Abrir</button>
                 </form>
 
-                <h3 style="margin-top:30px; color:var(--uni); border-bottom: 1px solid #eee;">2. Configuración de Test</h3>
+                <h3 style="margin-top:30px; color:var(--uni); border-bottom: 1px solid #eee;">2. Configurar Test</h3>
                 <form action="/configurar_lms" method="post">
                     <input type="hidden" name="password" value="{{ password }}">
+                    <input type="hidden" name="docente" value="{{ docente }}">
                     <select name="tipo">
                         <option value="tradicional">Imagen / PDF</option>
                         <option value="interactivo">Test Interactivo (JSON)</option>
@@ -207,10 +214,10 @@
                     </div>
 
                     <div>
-                        <h3 style="margin-top:0; color:var(--uni);">📑 Respuestas Entregadas</h3>
+                        <h3 style="margin-top:0; color:var(--uni);">📑 Entregas</h3>
                         {% for res in respuestas %}
                         <div style="background:#f8fafc; border-left:4px solid #10b981; padding:10px; margin-bottom:10px; border-radius:4px; font-size:12px;">
-                            <b>ID: {{ res.ID }}</b> <span style="color:#666; float:right;">{{ res.Fecha }}</span><br>
+                            <b>{{ res.ID }}</b> <span style="color:#666; float:right;">{{ res.Fecha }}</span><br>
                             <hr style="border:0; border-top:1px solid #ddd; margin: 5px 0;">
                             {% for p, r in res.Detalle.items() %}
                                 <b>{{ p }}:</b> {{ r }}<br>
@@ -231,7 +238,7 @@
     <div style="display:flex; justify-content:center; align-items:center; height:100vh;">
         <div style="background:white; padding:40px; border-radius:15px; box-shadow:0 10px 30px rgba(0,0,0,0.1); text-align:center;">
             <h1 style="color:#10b981; margin-top:0;">✅ Evaluación Completada</h1>
-            <p style="color:#555;">Tus respuestas e historial de auditoría han sido guardados.</p>
+            <p style="color:#555;">Tus respuestas han sido enviadas.</p>
             <button onclick="location.href='/'" class="btn" style="margin-top:20px; width:auto; padding:10px 30px;">Volver al Portal</button>
         </div>
     </div>
