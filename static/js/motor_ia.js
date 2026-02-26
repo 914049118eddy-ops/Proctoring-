@@ -1,5 +1,5 @@
 // ==========================================
-// MOTOR IA V8.0 - FIEE UNI (YOLO CORREGIDO Y UNIFICADO)
+// MOTOR IA V9.0 - FIEE UNI (DEBUG MODE + YOLO RESCUE)
 // ==========================================
 const video = document.getElementById('video-alumno');
 const canvas = document.getElementById('canvas-oculto');
@@ -9,11 +9,8 @@ let enviandoAlerta = false;
 let yoloSession = null;
 let frameCounter = 0;
 
-// --- 1. PRISIÓN DIGITAL ---
-window.addEventListener('blur', () => enviarAlerta("Cambio de Pestaña (Posible Fraude)", true));
+window.addEventListener('blur', () => enviarAlerta("Cambio de Pestaña", true));
 document.addEventListener('contextmenu', e => e.preventDefault());
-document.addEventListener('copy', e => e.preventDefault());
-document.addEventListener('paste', e => e.preventDefault());
 
 function agregarEventoVisual(texto) {
     const lista = document.getElementById('lista-eventos');
@@ -48,7 +45,7 @@ async function enviarAlerta(tipo, camOk = true) {
     const img = canvas.toDataURL('image/jpeg', 0.6);
 
     try {
-        await fetch('/api/alerta_ia', { // Ruta actualizada a la nueva API POO
+        await fetch('/api/alerta_ia', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({...DATOS_ALUMNO, tipo_falta: tipo, imagen_b64: img, camara_ok: camOk})
@@ -57,7 +54,6 @@ async function enviarAlerta(tipo, camOk = true) {
     setTimeout(() => enviandoAlerta = false, 4000); 
 }
 
-// --- 2. MEDIAPIPE (MIRADA Y CÁMARA TAPADA) ---
 let contMirada = 0;
 const faceMesh = new FaceMesh({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
 faceMesh.setOptions({maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5}); 
@@ -81,62 +77,71 @@ faceMesh.onResults(async (res) => {
     }
 });
 
-// --- 3. YOLOv8 CORREGIDO (DETECCIÓN DE CELULARES Y LIBROS) ---
-let contObjeto = 0;
+let contCelular = 0;
+// Bajamos drásticamente el umbral para asegurar que lo detecte.
+const CONFIANZA_MINIMA = 0.15; 
 
 async function inferirYOLO() {
     if (!yoloSession || enviandoAlerta) return;
     
+    // 1. Preprocesamiento de la imagen para YOLO
     ctx.drawImage(video, 0, 0, 640, 640);
     const data = ctx.getImageData(0, 0, 640, 640).data;
     const input = new Float32Array(3 * 640 * 640);
     for (let i = 0; i < 640 * 640; i++) {
-        input[i] = data[i*4]/255.0;
-        input[640*640+i] = data[i*4+1]/255.0;
-        input[2*640*640+i] = data[i*4+2]/255.0;
+        input[i] = data[i*4] / 255.0;              // Canal R
+        input[640*640+i] = data[i*4+1] / 255.0;    // Canal G
+        input[2*640*640+i] = data[i*4+2] / 255.0;  // Canal B
     }
     
     try {
         const tensor = new ort.Tensor('float32', input, [1, 3, 640, 640]);
         const output = await yoloSession.run({images: tensor});
-        const prob = output.output0.data;
+        const prob = output.output0.data; // Array plano de 1 * 84 * 8400
         
-        // Búsqueda del tensor máximo para celular (clase 67 -> índice 71) y libro (clase 73 -> índice 77)
-        let max_celular_conf = 0;
-        let max_libro_conf = 0;
+        let celular = false;
         
-        for (let i = 0; i < 8400; i++) {
-            const conf_celular = prob[71 * 8400 + i];
-            const conf_libro = prob[77 * 8400 + i];
-            
-            if (conf_celular > max_celular_conf) max_celular_conf = conf_celular;
-            if (conf_libro > max_libro_conf) max_libro_conf = conf_libro;
+        // MODO DEBUG: Vamos a ver qué detecta globalmente
+        let max_overall_conf = 0;
+        let best_class = -1;
+        
+        for (let clase = 4; clase < 84; clase++) { // Las primeras 4 filas son coordenadas (X,Y,W,H)
+            for (let i = 0; i < 8400; i++) {
+                const conf = prob[clase * 8400 + i];
+                if (conf > max_overall_conf) {
+                    max_overall_conf = conf;
+                    best_class = clase - 4; // Ajustamos para obtener el ID real de COCO (0 a 79)
+                }
+            }
         }
-
-        // Puedes ver la confianza real en tu consola pulsando F12
-        // console.log("Confianza Celular:", max_celular_conf, "| Libro:", max_libro_conf);
         
-        // Umbral bajado a 0.20 para asegurar la detección en webcams
-        if (max_celular_conf > 0.20) {
-            contObjeto++;
-            if (contObjeto >= 2) { enviarAlerta("Teléfono Celular Detectado"); contObjeto = 0; }
-        } else if (max_libro_conf > 0.25) {
-            contObjeto++;
-            if (contObjeto >= 2) { enviarAlerta("Libro/Apuntes Detectados"); contObjeto = 0; }
-        } else {
-            contObjeto = 0;
+        // Imprime en la consola del navegador (F12) lo que la IA ve con más confianza en ese momento
+        console.log(`[YOLO Debug] Mejor Detección -> Clase: ${best_class} | Confianza: ${(max_overall_conf * 100).toFixed(2)}%`);
+
+        // Evaluación específica de Celular (Clase 67 -> fila 71)
+        for (let i = 0; i < 8400; i++) {
+            if (prob[71 * 8400 + i] > CONFIANZA_MINIMA) { 
+                celular = true; 
+                break; 
+            }
+        }
+        
+        if (celular) {
+            contCelular++;
+            if (contCelular >= 2) { enviarAlerta("Teléfono Celular Detectado"); contCelular = 0; }
+        } else { 
+            contCelular = 0; 
         }
         
     } catch(e) { console.error("Error YOLO:", e); }
 }
 
-// --- 4. ARRANQUE ASÍNCRONO ---
 const camera = new Camera(video, {
     onFrame: async () => {
         try {
             await faceMesh.send({image: video});
             frameCounter++;
-            if (frameCounter % 5 === 0) await inferirYOLO(); // Analizar rápido
+            if (frameCounter % 5 === 0) await inferirYOLO();
         } catch(e) {}
     },
     width: 640, height: 480
@@ -145,10 +150,14 @@ const camera = new Camera(video, {
 camera.start().then(() => {
     setTimeout(async () => {
         try {
+            // Inicialización de YOLO sin forzar hilos para evitar cuelgues
             yoloSession = await ort.InferenceSession.create('/static/yolov8n.onnx', {executionProviders: ['wasm']});
-            document.getElementById('estado').innerHTML = "🟢 Monitoreo Activo";
-            document.getElementById('estado').style.color = '#10b981';
-            document.getElementById('estado').style.borderColor = '#10b981';
-        } catch(e) { console.error(e); }
+            const badge = document.getElementById('estado');
+            if(badge) {
+                badge.innerHTML = "🟢 Monitoreo Activo";
+                badge.style.color = '#10b981';
+                badge.style.borderColor = '#10b981';
+            }
+        } catch(e) { console.error("Fallo al cargar modelo ONNX:", e); }
     }, 500);
 });
