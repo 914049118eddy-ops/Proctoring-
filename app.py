@@ -134,14 +134,33 @@ class ContextoDatos:
     def actualizar_campo(self, entidad: str, clave_primaria: str, campo: str, valor: Any) -> None:
         with self.lock:
             ruta = self.estructura[entidad]["archivo"]
-            df = pd.read_csv(ruta)
-            df.loc[df['ID'] == clave_primaria, campo] = valor
-            df.to_csv(ruta, index=False)
+            try:
+                df = pd.read_csv(ruta)
+            
+                if "ID" in df.columns and campo in df.columns:
+                    df.loc[df['ID'] == clave_primaria, campo] = valor
+                    df.to_csv(ruta, index=False)
+
+            except Exception as e:
+                logger.error(f"Error actualizando {entidad}: {e}")
 
     def recuperar_todos(self, entidad: str) -> List[Dict[str, Any]]:
         ruta = self.estructura[entidad]["archivo"]
-        if not os.path.exists(ruta): return []
-        return pd.read_csv(ruta).to_dict(orient="records")
+    
+        try:
+            if not os.path.exists(ruta):
+                return []
+    
+            df = pd.read_csv(ruta)
+    
+            if df.empty:
+                return []
+    
+            return df.to_dict(orient="records")
+    
+        except Exception as e:
+            logger.error(f"Error leyendo {ruta}: {e}")
+            return []
 
     def purgar_tabla(self, entidad: str) -> None:
         with self.lock:
@@ -167,7 +186,7 @@ class MotorLMS:
             self.db.insertar("salas", {"Sala": sala_norm, "Creado": datetime.now().strftime("%Y-%m-%d %H:%M"), "Docente": docente})
         
         self.auth.registrar_docente(docente, password, sala_norm)
-        return sala_formateada
+        return sala_norm
 
     def _sala_existe(self, sala: str) -> bool:
         return any(s['Sala'].strip().upper() == sala for s in self.db.recuperar_todos("salas"))
@@ -250,11 +269,14 @@ class MotorAuditoriaIA:
 
     def consolidar_dashboard_docente(self, sala: str) -> Tuple[Dict, List, List, List]:
         """Agrega y formatea datos aislando los correspondientes a la sala solicitada."""
-        asistencia = [a for a in self.db.recuperar_todos("asistencia") if a["Sala"] == sala]
-        incidencias = [i for i in self.db.recuperar_todos("db") if i["Sala"] == sala]
+        asistencia = [a for a in self.db.recuperar_todos("asistencia") if a.get("Sala") == sala]
+        incidencias = [i for i in self.db.recuperar_todos("db") if i.get("Sala") == sala]
         
-        ids_presentes = {a["ID"] for a in asistencia}
-        respuestas_crudas = [r for r in self.db.recuperar_todos("respuestas") if r["ID"] in ids_presentes]
+        ids_presentes = {a.get("ID") for a in asistencia if a.get("ID")}
+        respuestas_crudas = [
+            r for r in self.db.recuperar_todos("respuestas")
+            if r.get("ID") in ids_presentes
+        ]
         
         # Parseo seguro de JSON de respuestas
         respuestas_formateadas = []
@@ -265,8 +287,8 @@ class MotorAuditoriaIA:
         
         metricas = {
             "total_alumnos": len(asistencia),
-            "activos": sum(1 for a in asistencia if a["Estado"] == "EN EXAMEN"),
-            "camaras_tapadas": sum(1 for a in asistencia if a["Camara"] == "BLOQUEADA"),
+            "activos": sum(1 for a in asistencia if a.get("Estado") == "EN EXAMEN"),
+            "camaras_tapadas": sum(1 for a in asistencia if a.get("Camara") == "BLOQUEADA"),
             "total_alertas": len(incidencias)
         }
         
@@ -355,9 +377,12 @@ async def endpoint_vista_examen(request: Request, uid: str, nombre: str, sala: s
     })
 
 @app.post("/finalizar_evaluacion")
-async def endpoint_finalizar(uid: str = Form(...), respuestas: str = Form(...)):
+async def endpoint_finalizar(request: Request, uid: str = Form(...), respuestas: str = Form(...)):
     lms_engine.recepcionar_examen(uid, respuestas)
-    return templates.TemplateResponse("index.html", {"request": {}, "vista": "confirmacion"})
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request, "vista": "confirmacion"}
+    )
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def endpoint_dashboard(request: Request):
@@ -410,3 +435,4 @@ if __name__ == "__main__":
     puerto = int(os.environ.get("PORT", 8000))
     logger.info(f"Iniciando Servidor FIEE Proctoring en el puerto {puerto}")
     uvicorn.run("app:app", host="0.0.0.0", port=puerto)
+
