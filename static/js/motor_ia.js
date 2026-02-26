@@ -4,7 +4,7 @@
 const video = document.getElementById('video-alumno');
 const canvasOculto = document.getElementById('canvas-oculto');
 const ctxOculto = canvasOculto.getContext('2d', { willReadFrequently: true });
-
+const HEARTBEAT_INTERVAL = 30000; // 30 segundos
 // Lienzo para dibujar las cajas encima del video
 const overlayCanvas = document.getElementById('overlay-ia');
 const ctxOverlay = overlayCanvas ? overlayCanvas.getContext('2d') : null;
@@ -42,6 +42,16 @@ function agregarEventoVisual(texto) {
         }, 4000);
     }
 }
+// 1. SISTEMA DE PULSO DE VIDA (Heartbeat)
+setInterval(async () => {
+    try {
+        await fetch('/api/heartbeat', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({uid: DATOS_ALUMNO.uid, sala: DATOS_ALUMNO.sala})
+        });
+    } catch (e) { console.warn("Intermitencia de red detectada."); }
+}, HEARTBEAT_INTERVAL);
 
 async function enviarAlerta(tipo, camOk = true) {
     if (enviandoAlerta) return;
@@ -52,11 +62,30 @@ async function enviarAlerta(tipo, camOk = true) {
     const img = canvasOculto.toDataURL('image/jpeg', 0.6);
 
     try {
-        await fetch('/api/alerta_ia', {
+        const response = await fetch('/api/alerta_ia', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({...DATOS_ALUMNO, tipo_falta: tipo, imagen_b64: img, camara_ok: camOk})
         });
+        
+        const data = await response.json();
+        
+        // EVALUACIÓN DE RESPUESTA DEL SERVIDOR (Bloqueo Automático)
+        if (data.estado === "BLOQUEADO") {
+            document.body.innerHTML = `
+                <div style="display:flex; justify-content:center; align-items:center; height:100vh; background:#fef2f2; font-family:sans-serif;">
+                    <div style="background:white; padding:50px; border-radius:12px; box-shadow:0 10px 15px -3px rgb(0 0 0 / 0.1); text-align:center; border-top:6px solid #ef4444;">
+                        <h1 style="color:#ef4444; margin-top:0; font-weight:800;">EXAMEN ANULADO</h1>
+                        <p style="color:#64748b; font-size:16px;">Has excedido el límite de infracciones permitidas (Multa IA).</p>
+                        <p style="font-size:12px; color:#94a3b8;">Tu sesión ha sido bloqueada y el docente ha sido notificado.</p>
+                        <button onclick="location.href='/'" style="margin-top:20px; padding:10px 20px; background:#ef4444; color:white; border:none; border-radius:5px; cursor:pointer;">Cerrar</button>
+                    </div>
+                </div>
+            `;
+            // Detenemos la cámara para liberar recursos
+            camera.stop();
+            return; 
+        }
     } catch (e) { console.error(e); }
     setTimeout(() => enviandoAlerta = false, 4000); 
 }
@@ -87,7 +116,7 @@ faceMesh.onResults(async (res) => {
 
 // --- 3. EXTRACCIÓN Y RENDERIZADO DE MATRICES YOLO ---
 let contCelular = 0;
-const CONFIANZA_MINIMA = 0.30; 
+const CONFIANZA_MINIMA = 0.350; 
 
 function ajustarCanvasOverlay() {
     if (overlayCanvas && video.videoWidth > 0) {
@@ -116,22 +145,36 @@ async function inferirYOLO() {
         let max_confianza = 0;
         let mejor_caja_idx = -1;
         let objeto_detectado = null; // "celular" o "libro"
+        let cajas_personas = [];
         
         // Búsqueda del tensor máximo en clase Celular (71) y Libro (77)
         for (let i = 0; i < 8400; i++) {
-            const conf_celular = prob[71 * 8400 + i];
-            const conf_libro = prob[77 * 8400 + i];
+            const conf_persona = prob[0 * 8400 + i]; // Clase 0: Persona
+            const conf_celular = prob[67 * 8400 + i]; // Asegura usar tu índice real
             
+            // Lógica existente de Celular/Libro...
             if (conf_celular > CONFIANZA_MINIMA && conf_celular > max_confianza) {
                 max_confianza = conf_celular;
                 mejor_caja_idx = i;
                 objeto_detectado = "Celular";
             }
-            if (conf_libro > CONFIANZA_MINIMA && conf_libro > max_confianza) {
-                max_confianza = conf_libro;
-                mejor_caja_idx = i;
-                objeto_detectado = "Libro";
+            
+            // NUEVO: Recolectar centros de posibles personas
+            if (conf_persona > 0.60) {
+                const cx = prob[0 * 8400 + i];
+                // Heurística simplificada de distancia (NMS rudimentario)
+                let es_nueva_persona = true;
+                for (let p of cajas_personas) {
+                    if (Math.abs(cx - p.x) < 150) { // Si los centros X están a menos de 150px, es la misma persona
+                        es_nueva_persona = false; break;
+                    }
+                }
+                if (es_nueva_persona) cajas_personas.push({x: cx});
             }
+        }
+        
+        if (cajas_personas.length > 1) {
+            enviarAlerta("Múltiples Personas Detectadas");
         }
         
         ajustarCanvasOverlay();
