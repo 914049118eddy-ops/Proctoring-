@@ -206,10 +206,15 @@ lms = GestorAcademicoLMS(db_manager, security_manager)
 auditoria_ia = AnalizadorProctoring(db_manager)
 
 # SEGUNDO: Iniciar FastAPI (Ahora las carpetas ya existen y no dará RuntimeError)
-app = FastAPI(title="Proctoring System FIEE - Secure Edition")
-app.add_middleware(SessionMiddleware, secret_key="proctoring_fiee_uni_2026_super_secure_key")
+app = FastAPI()
+app.add_middleware(SessionMiddleware, secret_key="proctor_2026_secure")
+
+# 🔧 CREAR DIRECTORIOS ANTES DE MONTAR (FIX RENDER)
+for d in ["evidencias", "static", "static/js", "templates"]:
+    os.makedirs(d, exist_ok=True)
 
 templates = Jinja2Templates(directory="templates")
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/ver_evidencia", StaticFiles(directory="evidencias"), name="evidencias")
 
@@ -302,4 +307,9 @@ async def descargar_dataset(request: Request):
     raise HTTPException(status_code=404)
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
+    uvicorn.run(
+        "app:app",
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8000))
+    )
+
