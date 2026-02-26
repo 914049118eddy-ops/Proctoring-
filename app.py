@@ -4,7 +4,7 @@ from fastapi import FastAPI, BackgroundTasks, Request, HTTPException, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.sessions import SessionMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Tuple, Any
 
@@ -318,4 +318,5 @@ async def alerta_ia(alerta: ModeloTensorIA, bt: BackgroundTasks):
 # ==========================================
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000)
+
 
