@@ -7,12 +7,14 @@ import json
 import hashlib
 import logging
 import csv
+import io 
+from openpyxl.styles import PatternFill, Font, Alignment
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Tuple, Any, Optional
 
 from fastapi import FastAPI, BackgroundTasks, Request, HTTPException, Form, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -29,9 +31,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("CoreAcademico")
 
-# --- Excepciones Personalizadas (POO Avanzada) ---
+# --- Excepciones Personalizadas ---
 class AccesoDenegadoError(Exception): pass
 class EntornoNoEncontradoError(Exception): pass
+class HeartbeatDTO(BaseModel):
+    uid: str
+    sala: str
 
 # ==========================================
 # 1. CAPA DE SEGURIDAD (Singleton & Hashing)
@@ -97,7 +102,8 @@ class ContextoDatos:
         self.lock = threading.Lock()
         self.estructura = {
             "db": {"archivo": "database.csv", "cols": ["Fecha", "ID", "Nombre", "Sala", "Falta", "Ruta"]},
-            "asistencia": {"archivo": "asistencia.csv", "cols": ["ID", "Nombre", "Sala", "Estado", "Camara", "Inicio"]},
+            # Añadimos 'Ultimo_Pulso' y 'Faltas' a la asistencia
+            "asistencia": {"archivo": "asistencia.csv", "cols": ["ID", "Nombre", "Sala", "Estado", "Camara", "Inicio", "Ultimo_Pulso", "Faltas"]},
             "respuestas": {"archivo": "respuestas.csv", "cols": ["ID", "Respuestas", "Fecha"]},
             "salas": {"archivo": "salas.csv", "cols": ["Sala", "Creado", "Docente"]},
             "logs": {"archivo": "system_logs.csv", "cols": ["Timestamp", "Evento", "Usuario"]}
@@ -180,7 +186,14 @@ class MotorLMS:
         if not self._sala_existe(sala_norm):
             raise EntornoNoEncontradoError(f"El entorno {sala_norm} no está activo.")
         
-        datos_acceso = {"ID": uid, "Nombre": nombre, "Sala": sala_norm, "Estado": "EN EXAMEN", "Camara": "OK", "Inicio": datetime.now().strftime("%H:%M:%S")}
+        # Inicializamos con 0 faltas y el pulso actual
+        datos_acceso = {
+            "ID": uid, "Nombre": nombre, "Sala": sala_norm, 
+            "Estado": "EN EXAMEN", "Camara": "OK", 
+            "Inicio": datetime.now().strftime("%H:%M:%S"),
+            "Ultimo_Pulso": datetime.now().strftime("%H:%M:%S"),
+            "Faltas": 0
+        }
         self.db.insertar("asistencia", datos_acceso)
         self.db.insertar("logs", {"Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Evento": "Conexión de alumno", "Usuario": uid})
         return True
@@ -248,7 +261,71 @@ class MotorAuditoriaIA:
             "ID": dto.uid, "Nombre": dto.nombre, "Sala": dto.sala, 
             "Falta": dto.tipo_falta, "Ruta": ruta_img
         })
+    def procesar_sancion(self, dto: EvidenciaIADTO) -> str:
+        """Incrementa el contador de faltas y decide si bloquea al estudiante."""
+        # 1. Recuperar registro del alumno
+        asistencia = self.db.recuperar_todos("asistencia")
+        alumno = next((a for a in asistencia if str(a.get("ID")) == dto.uid), None)
+        
+        estado_actual = "INDEXADO"
+        
+        if alumno:
+            faltas_actuales = int(alumno.get("Faltas", 0)) + 1
+            self.db.actualizar_campo("asistencia", dto.uid, "Faltas", faltas_actuales)
+            
+            # REGLAS DE ORO DE PENALIZACIÓN:
+            # - 3 faltas leves (Mirada desviada, Cambio de Pestaña) = Bloqueo
+            # - 1 falta grave (Celular Detectado) = Bloqueo Inmediato
+            es_falta_grave = "Celular" in dto.tipo_falta or "Múltiples Personas" in dto.tipo_falta
+            
+            if faltas_actuales >= 3 or es_falta_grave:
+                self.db.actualizar_campo("asistencia", dto.uid, "Estado", "BLOQUEADO")
+                estado_actual = "BLOQUEADO"
+        
+        return estado_actual
 
+    def exportar_excel_estetico(self, sala: str, tipo_reporte: str) -> io.BytesIO:
+        """Genera un archivo Excel en memoria estilizado con colores UNI."""
+        output = io.BytesIO()
+        
+        if tipo_reporte == "infracciones":
+            df = pd.DataFrame([i for i in self.db.recuperar_todos("db") if i.get("Sala") == sala])
+            nombre_hoja = "Auditoría Forense"
+        else:
+            # Consolidamos Asistencia + Respuestas
+            asist_df = pd.DataFrame([a for a in self.db.recuperar_todos("asistencia") if a.get("Sala") == sala])
+            resp_df = pd.DataFrame([r for r in self.db.recuperar_todos("respuestas")])
+            if not asist_df.empty and not resp_df.empty:
+                df = pd.merge(asist_df, resp_df, on="ID", how="left")
+            else:
+                df = asist_df
+            nombre_hoja = "Registro Académico"
+
+        if df.empty:
+            df = pd.DataFrame({"Mensaje": ["No hay datos registrados para esta sala."]})
+
+        # Escribimos usando openpyxl
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name=nombre_hoja)
+            worksheet = writer.sheets[nombre_hoja]
+            
+            # Estilo Institucional FIEE UNI (Granate #800000)
+            header_fill = PatternFill(start_color="800000", end_color="800000", fill_type="solid")
+            header_font = Font(color="FFFFFF", bold=True)
+            
+            for col_num, cell in enumerate(worksheet[1], 1):
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                
+            # Auto-ajustar el ancho de las columnas
+            for column_cells in worksheet.columns:
+                length = max(len(str(cell.value) or "") for cell in column_cells)
+                worksheet.column_dimensions[column_cells[0].column_letter].width = length + 5
+
+        output.seek(0)
+        return output
+    
     def consolidar_dashboard_docente(self, sala: str) -> Tuple[Dict, List, List, List]:
         asistencia = [a for a in self.db.recuperar_todos("asistencia") if a.get("Sala") == sala]
         incidencias = [i for i in self.db.recuperar_todos("db") if i.get("Sala") == sala]
@@ -325,6 +402,40 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 # ==========================================
 # 7. CONTROLADORES HTTP (RUTAS RESTful)
 # ==========================================
+@app.post("/api/heartbeat")
+async def endpoint_heartbeat(data: HeartbeatDTO):
+    """Actualiza el timestamp de última conexión del estudiante."""
+    db_context.actualizar_campo("asistencia", data.uid, "Ultimo_Pulso", datetime.now().strftime("%H:%M:%S"))
+    return {"status": "ok"}
+
+@app.post("/api/alerta_ia")
+async def endpoint_alerta_ia(alerta: EvidenciaIADTO, bt: BackgroundTasks, proctor: MotorAuditoriaIA = Depends(get_proctor)):
+    # 1. Evaluamos la sanción síncronamente para responder de inmediato
+    estado_bloqueo = proctor.procesar_sancion(alerta)
+    
+    # 2. Guardamos la imagen pesada en segundo plano para no bloquear el hilo de la API
+    bt.add_task(proctor.evaluar_infraccion, alerta)
+    
+    return {"estado": estado_bloqueo}
+
+@app.get("/descargar_excel/{tipo}")
+async def endpoint_descarga_excel(request: Request, tipo: str, proctor: MotorAuditoriaIA = Depends(get_proctor)):
+    if "docente" not in request.session:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    
+    sala = request.session['sala']
+    
+    if tipo not in ["infracciones", "asistencia"]:
+        raise HTTPException(status_code=400, detail="Tipo de reporte inválido")
+        
+    archivo_bytes = proctor.exportar_excel_estetico(sala, tipo)
+    
+    return StreamingResponse(
+        archivo_bytes, 
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+        headers={"Content-Disposition": f"attachment; filename=Reporte_{tipo.capitalize()}_{sala}.xlsx"}
+    )
+
 @app.get("/", response_class=HTMLResponse)
 async def home_portal(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "vista": "registro"})
@@ -406,4 +517,5 @@ async def endpoint_descarga(request: Request):
 if __name__ == "__main__":
     puerto = int(os.environ.get("PORT", 8000))
     uvicorn.run("app:app", host="0.0.0.0", port=puerto)
+
 
