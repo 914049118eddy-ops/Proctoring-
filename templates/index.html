@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -15,9 +14,10 @@
         
         /* Contenedores Base */
         .registro-container { display: flex; justify-content: center; align-items: center; height: 100vh; }
-        .card-login { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); width: 380px; border-top: 6px solid var(--uni); }
+        .card-login { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); width: 380px; border-top: 6px solid var(--uni); }
         .tabs { display: flex; border-bottom: 2px solid #e2e8f0; margin-bottom: 25px; }
         .tab { flex: 1; text-align: center; padding: 10px; cursor: pointer; color: #64748b; font-weight: 600; transition: 0.3s; }
+        .tab:hover { color: var(--uni); }
         .tab.active { color: var(--uni); border-bottom: 3px solid var(--uni); margin-bottom: -2px; }
         .form-view { display: none; animation: fadeIn 0.3s ease; }
         .form-view.active { display: block; }
@@ -59,37 +59,63 @@
                 <div id="tab-doc" class="tab" onclick="cambiarTab('doc')">Docente</div>
             </div>
             
-            <form id="form-est" class="form-view active" action="/ingresar_alumno" method="post">
-                <input type="text" name="nombre" placeholder="Nombres Completos" required>
-                <input type="text" name="uid" placeholder="Código UNI (Ej: 20261234A)" required>
-                <input type="text" name="sala" placeholder="Código de la Sala" required style="text-transform: uppercase;">
-                <button type="submit" class="btn">Acceder a Evaluación</button>
-            </form>
+            <div id="view-estudiante" class="form-view active">
+                <form action="/ingresar_alumno" method="post">
+                    <input type="text" name="nombre" placeholder="Nombres Completos" required>
+                    <input type="text" name="uid" placeholder="Código UNI (Ej: 20261234A)" required>
+                    <input type="text" name="sala" placeholder="Código de la Sala" required style="text-transform: uppercase;">
+                    <button type="submit" class="btn">Acceder a Evaluación</button>
+                </form>
+            </div>
             
-            <form id="form-doc" class="form-view" action="/login_docente" method="post">
-                <input type="text" name="docente" placeholder="Usuario Docente" required>
-                <input type="password" name="password" placeholder="Contraseña" required>
-                <button type="submit" class="btn" style="background:#334155; margin-bottom: 15px;">Ingresar a Panel</button>
-                <hr style="border:0; border-top:1px solid #e2e8f0; margin:20px 0;">
-                <button type="button" class="btn" style="background:#10b981;" onclick="document.getElementById('form-doc').style.display='none'; document.getElementById('form-crear').style.display='block';">Crear Entorno de Evaluación</button>
-            </form>
+            <div id="view-docente" class="form-view">
+                <form id="form-doc-login" action="/login_docente" method="post">
+                    <input type="text" name="docente" placeholder="Usuario Docente" required>
+                    <input type="password" name="password" placeholder="Contraseña" required>
+                    <button type="submit" class="btn" style="background:#334155; margin-bottom: 15px;">Ingresar a Panel</button>
+                    <hr style="border:0; border-top:1px solid #e2e8f0; margin:20px 0;">
+                    <button type="button" class="btn" style="background:#10b981;" onclick="mostrarCrearSala(true)">Crear Entorno de Evaluación</button>
+                </form>
 
-            <form id="form-crear" class="form-view" action="/crear_sala" method="post">
-                <input type="text" name="docente" placeholder="Usuario Docente" required>
-                <input type="text" name="nombre_sala" placeholder="Nombre de Nueva Sala" required style="text-transform: uppercase;">
-                <input type="password" name="password" placeholder="Establece una Contraseña" required>
-                <button type="submit" class="btn" style="background:#10b981; margin-bottom:15px;">Crear Entorno</button>
-                <button type="button" class="btn" style="background:#94a3b8;" onclick="document.getElementById('form-crear').style.display='none'; document.getElementById('form-doc').style.display='block';">Volver al Login</button>
-            </form>
+                <form id="form-doc-crear" action="/crear_sala" method="post" style="display:none;">
+                    <input type="text" name="docente" placeholder="Usuario Docente" required>
+                    <input type="text" name="nombre_sala" placeholder="Nombre de Nueva Sala" required style="text-transform: uppercase;">
+                    <input type="password" name="password" placeholder="Establece una Contraseña" required>
+                    <button type="submit" class="btn" style="background:#10b981; margin-bottom:15px;">Crear Entorno</button>
+                    <button type="button" class="btn" style="background:#94a3b8;" onclick="mostrarCrearSala(false)">Volver al Login</button>
+                </form>
+            </div>
+
         </div>
     </div>
     <script>
+        // Función principal de cambio de pestañas CORREGIDA
         function cambiarTab(tipo) {
-            document.getElementById('form-est').classList.toggle('active', tipo==='est');
-            document.getElementById('form-doc').classList.toggle('active', tipo==='doc');
-            document.getElementById('form-crear').classList.remove('active');
-            document.getElementById('tab-est').classList.toggle('active', tipo==='est');
-            document.getElementById('tab-doc').classList.toggle('active', tipo==='doc');
+            // 1. Resetear botones de pestañas
+            document.getElementById('tab-est').classList.toggle('active', tipo === 'est');
+            document.getElementById('tab-doc').classList.toggle('active', tipo === 'doc');
+            
+            // 2. Mostrar/Ocultar contenedores principales
+            document.getElementById('view-estudiante').classList.toggle('active', tipo === 'est');
+            document.getElementById('view-docente').classList.toggle('active', tipo === 'doc');
+
+            // 3. LA CORRECCIÓN: Resetear el estado interno de la vista de docente
+            // Siempre volver a mostrar el login y esconder la creación de sala al cambiar de tab.
+            mostrarCrearSala(false);
+        }
+
+        // Función auxiliar para navegar DENTRO de la pestaña de docente
+        function mostrarCrearSala(quiereCrear) {
+            const formLogin = document.getElementById('form-doc-login');
+            const formCrear = document.getElementById('form-doc-crear');
+
+            if (quiereCrear) {
+                formLogin.style.display = 'none';
+                formCrear.style.display = 'block';
+            } else {
+                formLogin.style.display = 'block';
+                formCrear.style.display = 'none';
+            }
         }
     </script>
     {% endif %}
@@ -177,9 +203,10 @@
                 <p style="margin:5px 0 0 0; color:#64748b; font-size:14px;">Docente: <b style="color:var(--text);">{{ docente }}</b> | Sala: <b style="color:var(--uni);">{{ sala }}</b></p>
             </div>
             <div style="display:flex; gap:10px;">
-                <button class="btn" onclick="location.reload()" style="width:auto; background:white; color:var(--text); border:1px solid #cbd5e1;">🔄 Refrescar</button>
+                <button class="btn" onclick="location.reload()" style="width:auto; background:white; color:var(--text); border:1px solid #cbd5e1;">🔄 Refrescar Red</button>
                 <a href="/descargar_dataset" class="btn" style="background:#0ea5e9; width:auto;">📥 Exportar CSV</a>
-                <form action="/limpiar_auditoria" method="post" onsubmit="return confirm('ATENCIÓN: Borrará las fotos. ¿Continuar?');" style="margin:0;">
+                
+                <form action="/limpiar_auditoria" method="post" onsubmit="return confirm('ATENCIÓN: Borrará irreversiblemente las fotos del servidor. ¿Continuar?');" style="margin:0;">
                     <button type="submit" class="btn" style="background:#ef4444; width:auto;">🗑️ Purgar Data</button>
                 </form>
                 <a href="/logout" class="btn" style="background:#334155; width:auto;">Salir</a>
@@ -188,25 +215,27 @@
 
         <div class="stats-grid">
             <div class="stat-card"><h2>{{ stats.total_alumnos }}</h2><p>ALUMNOS</p></div>
-            <div class="stat-card"><h2 style="color:#10b981;">{{ stats.activos }}</h2><p>RINDIENDO</p></div>
-            <div class="stat-card"><h2 style="color:#ef4444;">{{ stats.total_alertas }}</h2><p>INCIDENTES</p></div>
-            <div class="stat-card"><h2 style="color:{{ '#ef4444' if stats.camaras_tapadas > 0 else '#10b981' }}">{{ stats.camaras_tapadas }}</h2><p>CÁMARAS TAPADAS</p></div>
+            <div class="stat-card"><h2 style="color:#10b981;">{{ stats.activos }}</h2><p>RINDIENDO AHORA</p></div>
+            <div class="stat-card"><h2 style="color:#ef4444;">{{ stats.total_alertas }}</h2><p>INCIDENTES GLOBALES</p></div>
+            <div class="stat-card"><h2 style="color:{{ '#ef4444' if stats.camaras_tapadas > 0 else '#10b981' }}">{{ stats.camaras_tapadas }}</h2><p>SABOTAJES HARDWARE</p></div>
         </div>
 
         <div class="dash-layout">
             <div class="panel">
-                <h3 style="margin-top:0; color:var(--uni);">Configuración de Evaluación</h3>
+                <h3 style="margin-top:0; color:var(--uni); border-bottom: 2px solid #f1f5f9; padding-bottom:10px; font-size:16px;">Configuración de Evaluación</h3>
                 <form action="/configurar_lms" method="post">
+                    <label style="font-size:12px; font-weight:bold; color:#64748b;">FORMATO DE ENTREGA:</label>
                     <select name="tipo">
                         <option value="tradicional">Archivo Gráfico (Hoja de Preguntas)</option>
                         <option value="interactivo">Despliegue Dinámico (JSON Array)</option>
                     </select>
+                    <label style="font-size:12px; font-weight:bold; color:#64748b; margin-top:10px; display:block;">CONTENIDO ENCRIPTADO:</label>
                     <textarea name="contenido" rows="6" placeholder="Ingrese el URL del documento o la matriz JSON aquí..." required></textarea>
-                    <button type="submit" class="btn" style="background:#10b981;">Aplicar Parámetros</button>
+                    <button type="submit" class="btn" style="background:#10b981; margin-top:10px;">Aplicar Parámetros a la Sala</button>
                 </form>
                 
-                <div style="margin-top: 35px; background: #faf5ff; padding: 20px; border-radius: 8px;">
-                    <h4 style="margin-top:0; color:#0369a1;">Conexiones Activas</h4>
+                <div style="margin-top: 35px; background: #faf5ff; padding: 20px; border-radius: 8px; border-left: 4px solid #0ea5e9;">
+                    <h4 style="margin-top:0; color:#0369a1; font-size:14px;">Conexiones Activas (Sockets)</h4>
                     <div style="max-height: 200px; overflow-y: auto;">
                         {% for est in asistencia %}
                         <div style="font-size:12px; margin-bottom:10px; border-bottom:1px solid #e0f2fe; padding-bottom:10px;">
@@ -214,6 +243,8 @@
                             Status: <span style="font-weight:bold; color:{{ '#10b981' if est.Estado == 'EN EXAMEN' else '#64748b' }}">{{ est.Estado }}</span> | 
                             Video: <span style="font-weight:bold; color:{{ '#ef4444' if est.Camara == 'BLOQUEADA' else '#10b981' }}">{{ est.Camara }}</span>
                         </div>
+                        {% else %}
+                        <p style="color:#94a3b8; font-size:12px;">Esperando handshake de clientes...</p>
                         {% endfor %}
                     </div>
                 </div>
@@ -222,32 +253,42 @@
             <div class="panel">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 25px;">
                     <div>
-                        <h3 style="margin-top:0; color:var(--uni);">🚨 Auditoría Forense IA</h3>
-                        <div style="max-height: 600px; overflow-y: auto;">
+                        <h3 style="margin-top:0; color:var(--uni); border-bottom: 2px solid #f1f5f9; padding-bottom:10px; font-size:16px;">Auditoría Forense IA</h3>
+                        <div style="max-height: 600px; overflow-y: auto; padding-right:10px;">
                             {% for item in incidencias %}
                             <div class="evidencia-card">
                                 <img src="/ver_evidencia/{{ item.Ruta.split('/')[-1] }}" loading="lazy">
                                 <div style="padding: 12px; font-size:12px; width:100%;">
-                                    <span style="background:#fee2e2; color:#b91c1c; padding:3px 6px; border-radius:4px; font-weight:bold;">{{ item.Falta }}</span><br>
+                                    <span style="background:#fee2e2; color:#b91c1c; padding:3px 6px; border-radius:4px; font-weight:bold; font-size:10px;">{{ item.Falta }}</span><br>
                                     <div style="margin-top:8px;"><b>{{ item.Nombre }}</b></div>
                                     <div style="color:#64748b; margin-top:2px;">{{ item.Fecha }}</div>
                                 </div>
                             </div>
+                            {% else %}
+                            <div style="text-align:center; padding:40px 20px; background:#f8fafc; border-radius:8px; border:1px dashed #e2e8f0;">
+                                <p style="color:#94a3b8; font-size:13px; margin:0;">El entorno de evaluación es seguro.</p>
+                            </div>
                             {% endfor %}
                         </div>
                     </div>
+
                     <div>
-                        <h3 style="margin-top:0; color:var(--uni);">📑 Payloads Entregados</h3>
-                        <div style="max-height: 600px; overflow-y: auto;">
+                        <h3 style="margin-top:0; color:var(--uni); border-bottom: 2px solid #f1f5f9; padding-bottom:10px; font-size:16px;">Payloads Entregados</h3>
+                        <div style="max-height: 600px; overflow-y: auto; padding-right:10px;">
                             {% for res in respuestas %}
-                            <div style="background:white; border:1px solid #e2e8f0; border-left:4px solid #10b981; padding:15px; margin-bottom:15px; border-radius:6px; font-size:12px;">
+                            <div style="background:white; border:1px solid #e2e8f0; border-left:4px solid #10b981; padding:15px; margin-bottom:15px; border-radius:6px; font-size:12px; box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);">
                                 <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                                    <b>{{ res.ID }}</b> <span style="color:#64748b;">{{ res.Fecha }}</span>
+                                    <b>Alumno: {{ res.ID }}</b> 
+                                    <span style="color:#64748b;">{{ res.Fecha }}</span>
                                 </div>
-                                <hr style="border:0; border-top:1px dashed #e2e8f0; margin: 8px 0;">
+                                <hr style="border:0; border-top:1px dashed #e2e8f0; margin: 8px 0 10px 0;">
                                 {% for p, r in res.Detalle.items() %}
                                     <div style="margin-bottom:4px;"><span style="color:#64748b;">{{ p }}:</span> <b>{{ r }}</b></div>
                                 {% endfor %}
+                            </div>
+                            {% else %}
+                            <div style="text-align:center; padding:40px 20px; background:#f8fafc; border-radius:8px; border:1px dashed #e2e8f0;">
+                                <p style="color:#94a3b8; font-size:13px; margin:0;">En espera de POST requests...</p>
                             </div>
                             {% endfor %}
                         </div>
