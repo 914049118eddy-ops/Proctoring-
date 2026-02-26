@@ -10,42 +10,33 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Tuple, Any, Optional
 
-from fastapi import FastAPI, BackgroundTasks, Request, HTTPException, Form
+from fastapi import FastAPI, BackgroundTasks, Request, HTTPException, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
-from fastapi.exceptions import RequestValidationError
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, Field
 
 # ==========================================
-# CONFIGURACIÓN DE LOGGING INSTITUCIONAL
+# 0. CONFIGURACIÓN E INFRAESTRUCTURA BASE
 # ==========================================
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | FIEE-PROCTORING | %(message)s",
+    format="%(asctime)s | %(levelname)s | PROCTORING-CORE | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
-logger = logging.getLogger("ProctoringFIEE")
+logger = logging.getLogger("CoreAcademico")
+
+# --- Excepciones Personalizadas (POO Avanzada) ---
+class AccesoDenegadoError(Exception): pass
+class EntornoNoEncontradoError(Exception): pass
 
 # ==========================================
-# DATA TRANSFER OBJECTS (DTOs) CON PYDANTIC
-# ==========================================
-class EvidenciaIADTO(BaseModel):
-    """Modelo robusto para la validación de datos de IA."""
-    uid: str = Field(..., min_length=3, description="Código del estudiante")
-    nombre: str = Field(..., min_length=3, description="Nombre completo")
-    sala: str = Field(..., description="Sala de evaluación")
-    tipo_falta: str = Field(..., description="Clasificación de la infracción")
-    imagen_b64: str = Field(..., description="Fotografía codificada en Base64")
-    camara_ok: bool = Field(..., description="Estado de obstrucción de la cámara")
-
-# ==========================================
-# 1. CAPA DE SEGURIDAD (Criptografía Hash)
+# 1. CAPA DE SEGURIDAD (Singleton & Hashing)
 # ==========================================
 class GestorSeguridadInstitucional:
-    """Implementa Singleton y Hashing para credenciales docentes."""
+    """Maneja la criptografía de credenciales garantizando una única instancia (Singleton)."""
     _instancia = None
     _lock = threading.Lock()
 
@@ -66,7 +57,6 @@ class GestorSeguridadInstitucional:
         if not self.archivo_docentes.exists():
             with open(self.archivo_docentes, "w", encoding="utf-8") as f:
                 json.dump({}, f)
-            logger.info("Base de datos de credenciales inicializada.")
 
     def encriptar_clave(self, password: str) -> str:
         return hashlib.sha256(password.encode('utf-8')).hexdigest()
@@ -81,38 +71,35 @@ class GestorSeguridadInstitucional:
                 "sala_asignada": sala.upper(),
                 "fecha_registro": datetime.now().isoformat()
             }
-            
             with open(self.archivo_docentes, "w", encoding="utf-8") as f:
                 json.dump(docentes, f, indent=4)
-            logger.info(f"Docente '{docente}' registrado con acceso a la sala {sala}.")
 
-    def autenticar_docente(self, docente: str, password: str) -> Optional[str]:
+    def autenticar_docente(self, docente: str, password: str) -> str:
         try:
             with open(self.archivo_docentes, "r", encoding="utf-8") as f:
                 docentes = json.load(f)
             
             datos_docente = docentes.get(docente)
             if datos_docente and datos_docente["password_hash"] == self.encriptar_clave(password):
-                logger.info(f"Autenticación exitosa para docente '{docente}'.")
                 return datos_docente["sala_asignada"]
         except Exception as e:
-            logger.error(f"Error en autenticación: {e}")
+            logger.error(f"Falla de E/S en autenticación: {e}")
         
-        logger.warning(f"Intento de acceso fallido para usuario '{docente}'.")
-        return None
+        raise AccesoDenegadoError("Credenciales inválidas o usuario inexistente.")
 
 # ==========================================
 # 2. CAPA DE PERSISTENCIA (Manejo de Archivos)
 # ==========================================
 class ContextoDatos:
-    """Provee acceso thread-safe a las bases de datos CSV."""
+    """Abstracción thread-safe para operaciones CRUD sobre archivos CSV."""
     def __init__(self):
         self.lock = threading.Lock()
         self.estructura = {
             "db": {"archivo": "database.csv", "cols": ["Fecha", "ID", "Nombre", "Sala", "Falta", "Ruta"]},
             "asistencia": {"archivo": "asistencia.csv", "cols": ["ID", "Nombre", "Sala", "Estado", "Camara", "Inicio"]},
             "respuestas": {"archivo": "respuestas.csv", "cols": ["ID", "Respuestas", "Fecha"]},
-            "salas": {"archivo": "salas.csv", "cols": ["Sala", "Creado", "Docente"]}
+            "salas": {"archivo": "salas.csv", "cols": ["Sala", "Creado", "Docente"]},
+            "logs": {"archivo": "system_logs.csv", "cols": ["Timestamp", "Evento", "Usuario"]}
         }
         self._auditar_entorno()
 
@@ -124,7 +111,6 @@ class ContextoDatos:
             ruta = meta["archivo"]
             if not os.path.exists(ruta) or os.stat(ruta).st_size == 0:
                 pd.DataFrame(columns=meta["cols"]).to_csv(ruta, index=False)
-                logger.info(f"Archivo {ruta} creado con estructura base.")
 
     def insertar(self, entidad: str, datos: Dict[str, Any]) -> None:
         with self.lock:
@@ -136,43 +122,32 @@ class ContextoDatos:
             ruta = self.estructura[entidad]["archivo"]
             try:
                 df = pd.read_csv(ruta)
-            
                 if "ID" in df.columns and campo in df.columns:
                     df.loc[df['ID'] == clave_primaria, campo] = valor
                     df.to_csv(ruta, index=False)
-
             except Exception as e:
-                logger.error(f"Error actualizando {entidad}: {e}")
+                logger.error(f"Error en actualización de fila: {e}")
 
     def recuperar_todos(self, entidad: str) -> List[Dict[str, Any]]:
         ruta = self.estructura[entidad]["archivo"]
-    
         try:
-            if not os.path.exists(ruta):
-                return []
-    
+            if not os.path.exists(ruta): return []
             df = pd.read_csv(ruta)
-    
-            if df.empty:
-                return []
-    
-            return df.to_dict(orient="records")
-    
+            return df.to_dict(orient="records") if not df.empty else []
         except Exception as e:
-            logger.error(f"Error leyendo {ruta}: {e}")
+            logger.error(f"Error de lectura en {ruta}: {e}")
             return []
 
     def purgar_tabla(self, entidad: str) -> None:
         with self.lock:
             ruta = self.estructura[entidad]["archivo"]
             pd.DataFrame(columns=self.estructura[entidad]["cols"]).to_csv(ruta, index=False)
-            logger.info(f"Tabla {entidad} purgada exitosamente.")
 
 # ==========================================
 # 3. CAPA LÓGICA DE NEGOCIO (Core Académico)
 # ==========================================
 class MotorLMS:
-    """Orquesta las operaciones del aula virtual."""
+    """Contiene las reglas de negocio universitarias."""
     def __init__(self, db: ContextoDatos, auth: GestorSeguridadInstitucional):
         self.db = db
         self.auth = auth
@@ -180,12 +155,11 @@ class MotorLMS:
 
     def inicializar_sala(self, sala: str, docente: str, password: str) -> str:
         sala_norm = sala.strip().upper()
-        if self._sala_existe(sala_norm):
-            logger.warning(f"La sala {sala_norm} ya existe. Reasignando credenciales.")
-        else:
+        if not self._sala_existe(sala_norm):
             self.db.insertar("salas", {"Sala": sala_norm, "Creado": datetime.now().strftime("%Y-%m-%d %H:%M"), "Docente": docente})
         
         self.auth.registrar_docente(docente, password, sala_norm)
+        self.db.insertar("logs", {"Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Evento": f"Creación/Asignación de Sala {sala_norm}", "Usuario": docente})
         return sala_norm
 
     def _sala_existe(self, sala: str) -> bool:
@@ -194,37 +168,32 @@ class MotorLMS:
     def procesar_acceso_alumno(self, uid: str, nombre: str, sala: str) -> bool:
         sala_norm = sala.strip().upper()
         if not self._sala_existe(sala_norm):
-            return False
+            raise EntornoNoEncontradoError(f"El entorno {sala_norm} no está activo.")
         
         datos_acceso = {"ID": uid, "Nombre": nombre, "Sala": sala_norm, "Estado": "EN EXAMEN", "Camara": "OK", "Inicio": datetime.now().strftime("%H:%M:%S")}
         self.db.insertar("asistencia", datos_acceso)
-        logger.info(f"Alumno {nombre} ({uid}) ingresó a la sala {sala_norm}.")
+        self.db.insertar("logs", {"Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Evento": "Conexión de alumno", "Usuario": uid})
         return True
 
     def recepcionar_examen(self, uid: str, payload_respuestas: str) -> None:
         datos = {"ID": uid, "Respuestas": payload_respuestas, "Fecha": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
         self.db.insertar("respuestas", datos)
         self.db.actualizar_campo("asistencia", uid, "Estado", "FINALIZADO")
-        logger.info(f"Examen finalizado para alumno {uid}.")
 
     def parametrizar_examen(self, sala: str, tipo: str, contenido: str) -> None:
         try:
             with open(self.config_path, "r", encoding="utf-8") as f:
                 config_global = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
+        except:
             config_global = {}
 
         config_global[sala] = {"tipo": tipo, "url": contenido if tipo == "tradicional" else "", "preguntas": []}
-        
         if tipo == "interactivo":
-            try:
-                config_global[sala]["preguntas"] = json.loads(contenido)
-            except ValueError:
-                logger.error("Error al decodificar JSON interactivo. Guardado como vacío.")
+            try: config_global[sala]["preguntas"] = json.loads(contenido)
+            except ValueError: logger.error("JSON interactivo inválido ignorado.")
 
         with open(self.config_path, "w", encoding="utf-8") as f:
             json.dump(config_global, f, indent=4)
-        logger.info(f"Configuración de examen actualizada para la sala {sala}.")
 
     def obtener_parametros(self, sala: str) -> dict:
         try:
@@ -235,10 +204,18 @@ class MotorLMS:
             return {"tipo": "tradicional", "url": "https://i.ibb.co/vzYp6YV/examen-fiee.jpg", "preguntas": []}
 
 # ==========================================
-# 4. CAPA DE ANÁLISIS (Proctoring e IA)
+# 4. CAPA DE ANÁLISIS E INTELIGENCIA ARTIFICIAL
 # ==========================================
+class EvidenciaIADTO(BaseModel):
+    uid: str
+    nombre: str
+    sala: str
+    tipo_falta: str
+    imagen_b64: str
+    camara_ok: bool
+
 class MotorAuditoriaIA:
-    """Evalúa e indexa las evidencias detectadas por los modelos ONNX."""
+    """Indexa y procesa las penalizaciones enviadas por los tensores WebAssembly."""
     def __init__(self, db: ContextoDatos):
         self.db = db
 
@@ -246,39 +223,28 @@ class MotorAuditoriaIA:
         timestamp = datetime.now().strftime("%H%M%S")
         ruta_img = f"evidencias/{dto.uid}_{timestamp}.jpg"
         
-        # Procesamiento I/O seguro
         try:
             header, encoded = dto.imagen_b64.split(",", 1) if "," in dto.imagen_b64 else ("", dto.imagen_b64)
             with open(ruta_img, "wb") as f:
                 f.write(base64.b64decode(encoded))
         except Exception as e:
-            logger.error(f"Fallo al decodificar evidencia visual de {dto.uid}: {e}")
+            logger.error(f"Decodificación visual fallida: {e}")
 
-        # Penalización cruzada si hay manipulación de hardware
         if not dto.camara_ok:
             self.db.actualizar_campo("asistencia", dto.uid, "Camara", "BLOQUEADA")
 
-        # Inserción en bitácora
-        registro_falta = {
+        self.db.insertar("db", {
             "Fecha": datetime.now().strftime("%H:%M:%S"),
             "ID": dto.uid, "Nombre": dto.nombre, "Sala": dto.sala, 
             "Falta": dto.tipo_falta, "Ruta": ruta_img
-        }
-        self.db.insertar("db", registro_falta)
-        logger.warning(f"Infracción detectada: {dto.tipo_falta} | Alumno: {dto.uid} | Sala: {dto.sala}")
+        })
 
     def consolidar_dashboard_docente(self, sala: str) -> Tuple[Dict, List, List, List]:
-        """Agrega y formatea datos aislando los correspondientes a la sala solicitada."""
         asistencia = [a for a in self.db.recuperar_todos("asistencia") if a.get("Sala") == sala]
         incidencias = [i for i in self.db.recuperar_todos("db") if i.get("Sala") == sala]
-        
         ids_presentes = {a.get("ID") for a in asistencia if a.get("ID")}
-        respuestas_crudas = [
-            r for r in self.db.recuperar_todos("respuestas")
-            if r.get("ID") in ids_presentes
-        ]
+        respuestas_crudas = [r for r in self.db.recuperar_todos("respuestas") if r.get("ID") in ids_presentes]
         
-        # Parseo seguro de JSON de respuestas
         respuestas_formateadas = []
         for r in respuestas_crudas:
             try: r['Detalle'] = json.loads(r['Respuestas'])
@@ -291,53 +257,60 @@ class MotorAuditoriaIA:
             "camaras_tapadas": sum(1 for a in asistencia if a.get("Camara") == "BLOQUEADA"),
             "total_alertas": len(incidencias)
         }
-        
         return metricas, incidencias[::-1], asistencia[::-1], respuestas_formateadas[::-1]
 
     def limpieza_profunda(self) -> None:
-        """Garbage Collector: Purgado de registros y recolección de archivos residuales."""
         self.db.purgar_tabla("db")
         target_dir = "evidencias"
         for archivo in os.listdir(target_dir):
-            if archivo.endswith((".jpg", ".png")):
-                try: 
-                    os.remove(os.path.join(target_dir, archivo))
-                except Exception as e: 
-                    logger.error(f"Error purgando {archivo}: {e}")
-        logger.info("Limpieza de auditoría ejecutada con éxito.")
-
+            if archivo.endswith(".jpg"):
+                try: os.remove(os.path.join(target_dir, archivo))
+                except Exception: pass
 
 # ==========================================
-# 5. BOOTSTRAPPING Y CONSTRUCCIÓN DE LA APP
+# 5. INICIALIZACIÓN Y DEPENDENCIAS
 # ==========================================
 db_context = ContextoDatos()
 auth_service = GestorSeguridadInstitucional()
 lms_engine = MotorLMS(db_context, auth_service)
 proctor_engine = MotorAuditoriaIA(db_context)
 
-app = FastAPI(title="Plataforma Proctoring FIEE", description="Sistema LMS con Supervisión de IA Distribuida", version="2.0")
-app.add_middleware(SessionMiddleware, secret_key="llave_maestra_fiee_2026_super_segura")
+# Funciones de Inyección de Dependencias
+def get_lms() -> MotorLMS: return lms_engine
+def get_proctor() -> MotorAuditoriaIA: return proctor_engine
+
+app = FastAPI(title="Proctoring Framework FIEE", version="3.0")
+app.add_middleware(SessionMiddleware, secret_key="hash_absoluto_fiee_2026")
 
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/ver_evidencia", StaticFiles(directory="evidencias"), name="evidencias")
 
 # ==========================================
-# 6. MANEJO GLOBAL DE EXCEPCIONES (Fix del 404)
+# 6. MANEJO GLOBAL DE EXCEPCIONES
 # ==========================================
+@app.exception_handler(AccesoDenegadoError)
+async def auth_exception_handler(request: Request, exc: AccesoDenegadoError):
+    return templates.TemplateResponse("index.html", {
+        "request": request, "vista": "error", "titulo": "Acceso Denegado", "mensaje": str(exc)
+    })
+
+@app.exception_handler(EntornoNoEncontradoError)
+async def environment_exception_handler(request: Request, exc: EntornoNoEncontradoError):
+    return templates.TemplateResponse("index.html", {
+        "request": request, "vista": "error", "titulo": "Sala Inexistente", "mensaje": str(exc)
+    })
+
 @app.exception_handler(StarletteHTTPException)
 async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
-    if exc.status_code == 404:
-        logger.warning(f"Ruta no encontrada solicitada: {request.url.path}")
-        return HTMLResponse("""
-            <div style="text-align:center; padding:50px; font-family:sans-serif; background:#f4f7f6; height:100vh;">
-                <h1 style="color:#800000; font-size:50px; margin-bottom:10px;">404</h1>
-                <h2>Recurso No Encontrado</h2>
-                <p>La ruta a la que intentas acceder no existe en la arquitectura del sistema.</p>
-                <a href="/" style="background:#800000; color:white; padding:10px 20px; text-decoration:none; border-radius:5px; display:inline-block; margin-top:20px;">Volver al Portal Principal</a>
-            </div>
-        """, status_code=404)
-    return HTMLResponse(f"<h1>Error {exc.status_code}</h1>", status_code=exc.status_code)
+    # Esto atrapa el famoso "Not Found" y el "Method Not Allowed"
+    if exc.status_code in [404, 405]:
+        return templates.TemplateResponse("index.html", {
+            "request": request, "vista": "error", 
+            "titulo": f"Error {exc.status_code}", 
+            "mensaje": "La ruta solicitada no es válida o intentaste recargar un formulario de manera insegura."
+        })
+    return HTMLResponse(f"<h1>Error Crítico {exc.status_code}</h1>", status_code=exc.status_code)
 
 # ==========================================
 # 7. CONTROLADORES HTTP (RUTAS RESTful)
@@ -347,53 +320,44 @@ async def home_portal(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "vista": "registro"})
 
 @app.post("/crear_sala")
-async def endpoint_crear_sala(request: Request, docente: str = Form(...), nombre_sala: str = Form(...), password: str = Form(...)):
-    sala_id = lms_engine.inicializar_sala(nombre_sala, docente, password)
+async def endpoint_crear_sala(request: Request, docente: str = Form(...), nombre_sala: str = Form(...), password: str = Form(...), lms: MotorLMS = Depends(get_lms)):
+    sala_id = lms.inicializar_sala(nombre_sala, docente, password)
     request.session["docente"] = docente
     request.session["sala"] = sala_id
-    logger.info(f"Sesión iniciada como profesor para la sala {sala_id}.")
     return RedirectResponse(url="/dashboard", status_code=303)
 
 @app.post("/login_docente")
 async def endpoint_login_docente(request: Request, docente: str = Form(...), password: str = Form(...)):
     sala_asignada = auth_service.autenticar_docente(docente, password)
-    if sala_asignada:
-        request.session["docente"] = docente
-        request.session["sala"] = sala_asignada
-        return RedirectResponse(url="/dashboard", status_code=303)
-    return HTMLResponse("<div style='text-align:center; padding:50px; font-family:sans-serif;'><h1>❌ Credenciales Incorrectas</h1><a href='/'>Reintentar</a></div>", status_code=403)
+    request.session["docente"] = docente
+    request.session["sala"] = sala_asignada
+    return RedirectResponse(url="/dashboard", status_code=303)
 
 @app.post("/ingresar_alumno")
-async def endpoint_ingreso_alumno(nombre: str = Form(...), uid: str = Form(...), sala: str = Form(...)):
-    if not lms_engine.procesar_acceso_alumno(uid, nombre, sala):
-        return HTMLResponse("<div style='text-align:center; padding:50px; font-family:sans-serif;'><h1>❌ La sala especificada no existe.</h1><a href='/'>Reintentar</a></div>", status_code=404)
+async def endpoint_ingreso_alumno(nombre: str = Form(...), uid: str = Form(...), sala: str = Form(...), lms: MotorLMS = Depends(get_lms)):
+    lms.procesar_acceso_alumno(uid, nombre, sala)
     return RedirectResponse(url=f"/examen?uid={uid}&nombre={nombre}&sala={sala.upper()}", status_code=303)
 
 @app.get("/examen", response_class=HTMLResponse)
-async def endpoint_vista_examen(request: Request, uid: str, nombre: str, sala: str):
-    config = lms_engine.obtener_parametros(sala.upper())
+async def endpoint_vista_examen(request: Request, uid: str, nombre: str, sala: str, lms: MotorLMS = Depends(get_lms)):
+    config = lms.obtener_parametros(sala.upper())
     return templates.TemplateResponse("index.html", {
         "request": request, "vista": "examen", "uid": uid, "nombre": nombre, "sala": sala, "config": config
     })
 
 @app.post("/finalizar_evaluacion")
-async def endpoint_finalizar(request: Request, uid: str = Form(...), respuestas: str = Form(...)):
-    lms_engine.recepcionar_examen(uid, respuestas)
-    return templates.TemplateResponse(
-        "index.html",
-        {"request": request, "vista": "confirmacion"}
-    )
+async def endpoint_finalizar(request: Request, uid: str = Form(...), respuestas: str = Form(...), lms: MotorLMS = Depends(get_lms)):
+    lms.recepcionar_examen(uid, respuestas)
+    return templates.TemplateResponse("index.html", {"request": request, "vista": "confirmacion"})
 
 @app.get("/dashboard", response_class=HTMLResponse)
-async def endpoint_dashboard(request: Request):
+async def endpoint_dashboard(request: Request, proctor: MotorAuditoriaIA = Depends(get_proctor)):
     if "docente" not in request.session:
-        logger.warning("Intento de acceso a dashboard sin sesión activa.")
         return RedirectResponse(url="/")
         
     docente = request.session["docente"]
     sala = request.session["sala"]
-    
-    stats, incidencias, asistencia, respuestas = proctor_engine.consolidar_dashboard_docente(sala)
+    stats, incidencias, asistencia, respuestas = proctor.consolidar_dashboard_docente(sala)
     
     return templates.TemplateResponse("index.html", {
         "request": request, "vista": "dashboard", "stats": stats, 
@@ -402,37 +366,33 @@ async def endpoint_dashboard(request: Request):
     })
 
 @app.post("/configurar_lms")
-async def endpoint_configurar_examen(request: Request, tipo: str = Form(...), contenido: str = Form(...)):
+async def endpoint_configurar_examen(request: Request, tipo: str = Form(...), contenido: str = Form(...), lms: MotorLMS = Depends(get_lms)):
     if "sala" in request.session:
-        lms_engine.parametrizar_examen(request.session["sala"], tipo, contenido)
+        lms.parametrizar_examen(request.session["sala"], tipo, contenido)
     return RedirectResponse(url="/dashboard", status_code=303)
 
 @app.post("/limpiar_auditoria")
-async def endpoint_limpiar(request: Request):
+async def endpoint_limpiar(request: Request, proctor: MotorAuditoriaIA = Depends(get_proctor)):
     if "docente" in request.session:
-        proctor_engine.limpieza_profunda()
+        proctor.limpieza_profunda()
     return RedirectResponse(url="/dashboard", status_code=303)
 
 @app.get("/logout")
 async def endpoint_logout(request: Request):
-    docente = request.session.get("docente", "Desconocido")
     request.session.clear()
-    logger.info(f"Sesión cerrada para el docente {docente}.")
     return RedirectResponse(url="/")
 
 @app.post("/api/alerta_ia")
-async def endpoint_alerta_ia(alerta: EvidenciaIADTO, bt: BackgroundTasks):
-    bt.add_task(proctor_engine.evaluar_infraccion, alerta)
-    return {"estado": "Acuse de recibo confirmado"}
+async def endpoint_alerta_ia(alerta: EvidenciaIADTO, bt: BackgroundTasks, proctor: MotorAuditoriaIA = Depends(get_proctor)):
+    bt.add_task(proctor.evaluar_infraccion, alerta)
+    return {"estado": "Indexado"}
 
 @app.get("/descargar_dataset")
 async def endpoint_descarga(request: Request):
     if "docente" in request.session and os.path.exists("database.csv"): 
         return FileResponse("database.csv", filename=f"Auditoria_{request.session['sala']}.csv")
-    raise HTTPException(status_code=404)
+    raise HTTPException(status_code=404, detail="Archivo no encontrado")
 
 if __name__ == "__main__":
     puerto = int(os.environ.get("PORT", 8000))
-    logger.info(f"Iniciando Servidor FIEE Proctoring en el puerto {puerto}")
     uvicorn.run("app:app", host="0.0.0.0", port=puerto)
-
