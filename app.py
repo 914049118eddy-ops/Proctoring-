@@ -503,11 +503,6 @@ async def endpoint_logout(request: Request):
     request.session.clear()
     return RedirectResponse(url="/")
 
-@app.post("/api/alerta_ia")
-async def endpoint_alerta_ia(alerta: EvidenciaIADTO, bt: BackgroundTasks, proctor: MotorAuditoriaIA = Depends(get_proctor)):
-    bt.add_task(proctor.evaluar_infraccion, alerta)
-    return {"estado": "Indexado"}
-
 @app.get("/descargar_dataset")
 async def endpoint_descarga(request: Request):
     if "docente" in request.session and os.path.exists("database.csv"): 
@@ -517,6 +512,7 @@ async def endpoint_descarga(request: Request):
 if __name__ == "__main__":
     puerto = int(os.environ.get("PORT", 8000))
     uvicorn.run("app:app", host="0.0.0.0", port=puerto)
+
 
 
 
