@@ -116,7 +116,7 @@ faceMesh.onResults(async (res) => {
 
 // --- 3. EXTRACCIÓN Y RENDERIZADO DE MATRICES YOLO ---
 let contCelular = 0;
-const CONFIANZA_MINIMA = 0.350; 
+const CONFIANZA_MINIMA = 0.60; 
 
 function ajustarCanvasOverlay() {
     if (overlayCanvas && video.videoWidth > 0) {
