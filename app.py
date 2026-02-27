@@ -276,7 +276,7 @@ class MotorAuditoriaIA:
             # REGLAS DE ORO DE PENALIZACIÓN:
             # - 3 faltas leves (Mirada desviada, Cambio de Pestaña) = Bloqueo
             # - 1 falta grave (Celular Detectado) = Bloqueo Inmediato
-            es_falta_grave = "Celular" in dto.tipo_falta or "Múltiples Personas" in dto.tipo_falta
+            es_falta_grave = "Celular" in dto.tipo_falta 
             
             if faltas_actuales >= 3 or es_falta_grave:
                 self.db.actualizar_campo("asistencia", dto.uid, "Estado", "BLOQUEADO")
@@ -517,5 +517,6 @@ async def endpoint_descarga(request: Request):
 if __name__ == "__main__":
     puerto = int(os.environ.get("PORT", 8000))
     uvicorn.run("app:app", host="0.0.0.0", port=puerto)
+
 
 
