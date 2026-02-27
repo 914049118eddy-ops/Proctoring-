@@ -145,42 +145,87 @@ async function inferirYOLO() {
         let max_confianza = 0;
         let mejor_caja_idx = -1;
         let objeto_detectado = null; // "celular" o "libro"
-        let cajas_personas = [];
+        let detecciones_persona = [];
+        const AREA_MINIMA = 0.08;        // 8% del frame
+        const SEPARACION_MINIMA = 120;   // píxeles
+        const FRAMES_REQUERIDOS = 5;     // estabilidad temporal
         
-        // Búsqueda del tensor máximo en clase Celular (71) y Libro (77)
+        // Búsqueda del tensor máximo en clase Celular y detección robusta de personas
         for (let i = 0; i < 8400; i++) {
-            const conf_persona = prob[0 * 8400 + i]; // Clase 0: Persona
-            const conf_celular = prob[67 * 8400 + i]; // Asegura usar tu índice real
+        
+            const conf_persona = prob[0 * 8400 + i]; 
+            const conf_celular = prob[67 * 8400 + i]; 
             
-            // Lógica existente de Celular/Libro...
+            // --- Lógica existente de Celular ---
             if (conf_celular > CONFIANZA_MINIMA && conf_celular > max_confianza) {
                 max_confianza = conf_celular;
                 mejor_caja_idx = i;
                 objeto_detectado = "Celular";
             }
-            
-            // NUEVO: Recolectar centros de posibles personas
-            if (conf_persona > 0.60) {
+        
+            // --- NUEVA detección robusta de personas ---
+            if (conf_persona > 0.65) {
+        
                 const cx = prob[0 * 8400 + i];
-                // Heurística simplificada de distancia (NMS rudimentario)
-                let es_nueva_persona = true;
-                for (let p of cajas_personas) {
-                    if (Math.abs(cx - p.x) < 150) { // Si los centros X están a menos de 150px, es la misma persona
-                        es_nueva_persona = false; break;
-                    }
-                }
-                if (es_nueva_persona) cajas_personas.push({x: cx});
+                const cy = prob[1 * 8400 + i];
+                const w  = prob[2 * 8400 + i];
+                const h  = prob[3 * 8400 + i];
+        
+                const area_relativa = (w * h) / (640 * 640);
+        
+                // 🔹 Filtro 1: tamaño mínimo real
+                if (area_relativa < AREA_MINIMA) continue;
+        
+                // 🔹 Filtro 2: proporción humana real
+                const ratio = h / w;
+                if (ratio < 1.2 || ratio > 4) continue;
+        
+                detecciones_persona.push({ cx, cy });
             }
         }
         
-        if (cajas_personas.length > 1) {
-            enviarAlerta("Múltiples Personas Detectadas");
+        // --- Filtro por separación real 2D ---
+        let personas_validas = [];
+        
+        for (let d of detecciones_persona) {
+        
+            let es_nueva = true;
+        
+            for (let p of personas_validas) {
+        
+                const distancia = Math.sqrt(
+                    Math.pow(d.cx - p.cx, 2) +
+                    Math.pow(d.cy - p.cy, 2)
+                );
+        
+                if (distancia < SEPARACION_MINIMA) {
+                    es_nueva = false;
+                    break;
+                }
+            }
+        
+            if (es_nueva) personas_validas.push(d);
+        }
+        
+        // --- Persistencia temporal anti-falso-positivo ---
+        if (personas_validas.length > 1) {
+        
+            if (!window.contadorMultiples) window.contadorMultiples = 0;
+            window.contadorMultiples++;
+        
+            if (window.contadorMultiples >= FRAMES_REQUERIDOS) {
+                enviarAlerta("Múltiples Personas Detectadas");
+                window.contadorMultiples = 0;
+            }
+        
+        } else {
+            window.contadorMultiples = 0;
         }
         
         ajustarCanvasOverlay();
         ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
-        // Si encontramos algo con alta confianza, calculamos la caja
+        // Si encontramos algo con alta , calculamos la caja
         if (mejor_caja_idx !== -1) {
             // Extraemos las dimensiones desde las primeras 4 filas de la columna encontrada
             const cx = prob[0 * 8400 + mejor_caja_idx];
