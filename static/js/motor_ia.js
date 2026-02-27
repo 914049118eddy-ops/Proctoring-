@@ -4,8 +4,8 @@
 const video = document.getElementById('video-alumno');
 const canvasOculto = document.getElementById('canvas-oculto');
 const ctxOculto = canvasOculto.getContext('2d', { willReadFrequently: true });
-const HEARTBEAT_INTERVAL = 30000; // 30 segundos
-// Lienzo para dibujar las cajas encima del video
+const HEARTBEAT_INTERVAL = 30000;
+
 const overlayCanvas = document.getElementById('overlay-ia');
 const ctxOverlay = overlayCanvas ? overlayCanvas.getContext('2d') : null;
 
@@ -42,7 +42,8 @@ function agregarEventoVisual(texto) {
         }, 4000);
     }
 }
-// 1. SISTEMA DE PULSO DE VIDA (Heartbeat)
+
+// --- HEARTBEAT ---
 setInterval(async () => {
     try {
         await fetch('/api/heartbeat', {
@@ -70,7 +71,6 @@ async function enviarAlerta(tipo, camOk = true) {
         
         const data = await response.json();
         
-        // EVALUACIÓN DE RESPUESTA DEL SERVIDOR (Bloqueo Automático)
         if (data.estado === "BLOQUEADO") {
             document.body.innerHTML = `
                 <div style="display:flex; justify-content:center; align-items:center; height:100vh; background:#fef2f2; font-family:sans-serif;">
@@ -82,41 +82,61 @@ async function enviarAlerta(tipo, camOk = true) {
                     </div>
                 </div>
             `;
-            // Detenemos la cámara para liberar recursos
             camera.stop();
             return; 
         }
     } catch (e) { console.error(e); }
+
     setTimeout(() => enviandoAlerta = false, 4000); 
 }
 
-// --- 2. MEDIAPIPE (MIRADA Y CÁMARA TAPADA) ---
+// --- 2. MEDIAPIPE ---
 let contMirada = 0;
-const faceMesh = new FaceMesh({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
-faceMesh.setOptions({maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5}); 
+
+const faceMesh = new FaceMesh({
+    locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`
+});
+
+faceMesh.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: true,
+    minDetectionConfidence: 0.5
+});
 
 faceMesh.onResults(async (res) => {
-    ctxOculto.drawImage(video, 0, 0, 10, 10); 
+    ctxOculto.drawImage(video, 0, 0, 10, 10);
     const data = ctxOculto.getImageData(0, 0, 10, 10).data;
-    let brillo = 0; for (let i = 0; i < data.length; i += 4) brillo += (data[i]+data[i+1]+data[i+2])/3;
-    if ((brillo/100) < 15) { enviarAlerta("CÁMARA TAPADA", false); return; }
+
+    let brillo = 0;
+    for (let i = 0; i < data.length; i += 4)
+        brillo += (data[i]+data[i+1]+data[i+2])/3;
+
+    if ((brillo/100) < 15) {
+        enviarAlerta("CÁMARA TAPADA", false);
+        return;
+    }
 
     if (res.multiFaceLandmarks && res.multiFaceLandmarks.length > 0) {
         const p = res.multiFaceLandmarks[0];
         const ancho_ojo = Math.abs(p[133].x - p[33].x);
         const distancia_iris = Math.abs(p[468].x - p[33].x);
         const ratio = distancia_iris / ancho_ojo;
-        
+
         if (ratio < 0.40 || ratio > 0.60) {
             contMirada++;
-            if (contMirada > 5) { enviarAlerta("Mirada Desviada"); contMirada = 0; }
-        } else { contMirada = 0; }
+            if (contMirada > 5) {
+                enviarAlerta("Mirada Desviada");
+                contMirada = 0;
+            }
+        } else {
+            contMirada = 0;
+        }
     }
 });
 
-// --- 3. EXTRACCIÓN Y RENDERIZADO DE MATRICES YOLO ---
+// --- 3. YOLO (SOLO CELULAR) ---
 let contCelular = 0;
-const CONFIANZA_MINIMA = 0.60; 
+const CONFIANZA_MINIMA = 0.60;
 
 function ajustarCanvasOverlay() {
     if (overlayCanvas && video.videoWidth > 0) {
@@ -127,167 +147,99 @@ function ajustarCanvasOverlay() {
 
 async function inferirYOLO() {
     if (!yoloSession || enviandoAlerta) return;
-    
+
     ctxOculto.drawImage(video, 0, 0, 640, 640);
     const data = ctxOculto.getImageData(0, 0, 640, 640).data;
+
     const input = new Float32Array(3 * 640 * 640);
     for (let i = 0; i < 640 * 640; i++) {
         input[i] = data[i*4] / 255.0;
         input[640*640+i] = data[i*4+1] / 255.0;
         input[2*640*640+i] = data[i*4+2] / 255.0;
     }
-    
+
     try {
         const tensor = new ort.Tensor('float32', input, [1, 3, 640, 640]);
         const output = await yoloSession.run({images: tensor});
-        const prob = output.output0.data; // Array [1, 84, 8400]
-        
+        const prob = output.output0.data;
+
         let max_confianza = 0;
         let mejor_caja_idx = -1;
-        let objeto_detectado = null; // "celular" o "libro"
-        let detecciones_persona = [];
-        const AREA_MINIMA = 0.08;        // 8% del frame
-        const SEPARACION_MINIMA = 120;   // píxeles
-        const FRAMES_REQUERIDOS = 5;     // estabilidad temporal
-        
-        // Búsqueda del tensor máximo en clase Celular y detección robusta de personas
+        let objeto_detectado = null;
+
         for (let i = 0; i < 8400; i++) {
-        
-            const conf_persona = prob[0 * 8400 + i]; 
-            const conf_celular = prob[67 * 8400 + i]; 
-            
-            // --- Lógica existente de Celular ---
+            const conf_celular = prob[67 * 8400 + i];
+
             if (conf_celular > CONFIANZA_MINIMA && conf_celular > max_confianza) {
                 max_confianza = conf_celular;
                 mejor_caja_idx = i;
                 objeto_detectado = "Celular";
             }
-        
-            // --- NUEVA detección robusta de personas ---
-            if (conf_persona > 0.65) {
-        
-                const cx = prob[0 * 8400 + i];
-                const cy = prob[1 * 8400 + i];
-                const w  = prob[2 * 8400 + i];
-                const h  = prob[3 * 8400 + i];
-        
-                const area_relativa = (w * h) / (640 * 640);
-        
-                // 🔹 Filtro 1: tamaño mínimo real
-                if (area_relativa < AREA_MINIMA) continue;
-        
-                // 🔹 Filtro 2: proporción humana real
-                const ratio = h / w;
-                if (ratio < 1.2 || ratio > 4) continue;
-        
-                detecciones_persona.push({ cx, cy });
-            }
         }
-        
-        // --- Filtro por separación real 2D ---
-        let personas_validas = [];
-        
-        for (let d of detecciones_persona) {
-        
-            let es_nueva = true;
-        
-            for (let p of personas_validas) {
-        
-                const distancia = Math.sqrt(
-                    Math.pow(d.cx - p.cx, 2) +
-                    Math.pow(d.cy - p.cy, 2)
-                );
-        
-                if (distancia < SEPARACION_MINIMA) {
-                    es_nueva = false;
-                    break;
-                }
-            }
-        
-            if (es_nueva) personas_validas.push(d);
-        }
-        
-        // --- Persistencia temporal anti-falso-positivo ---
-        if (personas_validas.length > 1) {
-        
-            if (!window.contadorMultiples) window.contadorMultiples = 0;
-            window.contadorMultiples++;
-        
-            if (window.contadorMultiples >= FRAMES_REQUERIDOS) {
-                enviarAlerta("Múltiples Personas Detectadas");
-                window.contadorMultiples = 0;
-            }
-        
-        } else {
-            window.contadorMultiples = 0;
-        }
-        
+
         ajustarCanvasOverlay();
         ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
-        // Si encontramos algo con alta , calculamos la caja
         if (mejor_caja_idx !== -1) {
-            // Extraemos las dimensiones desde las primeras 4 filas de la columna encontrada
             const cx = prob[0 * 8400 + mejor_caja_idx];
             const cy = prob[1 * 8400 + mejor_caja_idx];
-            const w = prob[2 * 8400 + mejor_caja_idx];
-            const h = prob[3 * 8400 + mejor_caja_idx];
-            
+            const w  = prob[2 * 8400 + mejor_caja_idx];
+            const h  = prob[3 * 8400 + mejor_caja_idx];
+
             const escalaX = overlayCanvas.width / 640;
             const escalaY = overlayCanvas.height / 640;
-    
-            const x_pixel = (cx - w / 2) * escalaX;
-            const y_pixel = (cy - h / 2) * escalaY;
-    
-            ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
-           // Estilo UNI: Granate y Blanco
-        ctxOverlay.strokeStyle = "#800000"; 
-        ctxOverlay.setLineDash([5, 5]); // Línea punteada para un look más "tecnológico"
-        ctxOverlay.lineWidth = 2;
-        ctxOverlay.strokeRect(x_pixel, y_pixel, w * escalaX, h * escalaY);
-        
-        ctxOverlay.fillStyle = "#800000";
-        ctxOverlay.fillRect(x_pixel, y_pixel - 20, 100, 20);
-        ctxOverlay.fillStyle = "white";
-        ctxOverlay.fillText(`${objeto_detectado}`, x_pixel + 5, y_pixel - 5);
+            const x_pixel = (cx - w/2) * escalaX;
+            const y_pixel = (cy - h/2) * escalaY;
 
-            // Contador de infracción
+            ctxOverlay.strokeStyle = "#800000";
+            ctxOverlay.setLineDash([5,5]);
+            ctxOverlay.lineWidth = 2;
+            ctxOverlay.strokeRect(x_pixel, y_pixel, w * escalaX, h * escalaY);
+
+            ctxOverlay.fillStyle = "#800000";
+            ctxOverlay.fillRect(x_pixel, y_pixel - 20, 100, 20);
+            ctxOverlay.fillStyle = "white";
+            ctxOverlay.fillText(`${objeto_detectado}`, x_pixel + 5, y_pixel - 5);
+
             contCelular++;
-            if (contCelular >= 2) { 
-                enviarAlerta(`${objeto_detectado} Detectado`); 
-                contCelular = 0; 
+            if (contCelular >= 2) {
+                enviarAlerta(`${objeto_detectado} Detectado`);
+                contCelular = 0;
             }
-        } else { 
-            contCelular = 0; 
+        } else {
+            contCelular = 0;
         }
-        
-    } catch(e) { console.error("Error Matemático YOLO:", e); }
+
+    } catch(e) {
+        console.error("Error Matemático YOLO:", e);
+    }
 }
 
-// --- 4. ARRANQUE ASÍNCRONO ---
+// --- 4. ARRANQUE ---
 const camera = new Camera(video, {
     onFrame: async () => {
         try {
             await faceMesh.send({image: video});
             frameCounter++;
-            if (frameCounter % 5 === 0) await inferirYOLO(); // Rápido para que la caja se vea fluida
-        } catch(e) {}
+            if (frameCounter % 5 === 0) await inferirYOLO();
+        } catch(e){}
     },
-    width: 640, height: 480
+    width: 640,
+    height: 480
 });
 
 camera.start().then(() => {
     setTimeout(async () => {
         try {
-            yoloSession = await ort.InferenceSession.create('/static/yolov8n.onnx', {executionProviders: ['wasm']});
+            yoloSession = await ort.InferenceSession.create('/static/yolov8n.onnx', {executionProviders:['wasm']});
             const badge = document.getElementById('estado');
-            if(badge) {
+            if(badge){
                 badge.innerHTML = "🟢 Auditoría Activa";
                 badge.style.color = '#10b981';
                 badge.style.borderColor = '#10b981';
                 badge.style.background = '#f0fdf4';
             }
-        } catch(e) { console.error(e); }
+        } catch(e){ console.error(e); }
     }, 500);
 });
